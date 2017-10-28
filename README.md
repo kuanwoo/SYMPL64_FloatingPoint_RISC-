@@ -37,8 +37,7 @@ http://www.cdadapter.com/download/cross32.pdf
 
 Continue reading below the block diagram to find out more about this design, the instruction set, how to set up the simulation, etc.  If you have any questions, you can direct them to me at: sympl.gpu@gmail.com
 
-[Click here to see the block diagram (116kB)]
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/tree/master/Doc/images/Block_diagram_96dpi.png)
+[Click here to see the block diagram (116kB)](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/tree/master/Doc/images/Block_diagram_96dpi.png)
 
 ## SYMPL64 ISA General Description
 
@@ -299,7 +298,8 @@ Floating-point: (presently single-precision, but half and double-precision are o
 
  FADD
  FSUB
- FMULFMA (C-Reg should be written to first before pushing operandA and operandB into FMA)
+ FMUL
+ FMA (C-Reg should be written to first before pushing operandA and operandB into FMA)
  DOT (note that in this implementation, DOT uses the same physical operator as FMA) 
  FDIV
  SQRT
