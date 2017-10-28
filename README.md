@@ -1,6 +1,6 @@
 ![](https://github.com/jerry-D/SYMPL-FP324-AXI4-GP-GPU/blob/master/web_logo.jpg)
 
-# SYMPL “Opcode-less” Instruction Set Architecture (ISA) for a 
+## SYMPL “Opcode-less” Instruction Set Architecture (ISA) for a 
 64-Bit Interleaving, Multi-threading GP-GPU Compute Unit 
 Featuring: FloPoCo--Generated Floating-Point Operators
 
@@ -10,7 +10,7 @@ This implementation attempts to be IEEE754-2008-compliant, featuring the ability
 
 The following FP operators are (or will be) included (presently in single precision): FADD, FSUB, FMA, DOT, FMUL, FDIV, SQRT, LOG, EXP, PWR, ITOF, FTOI, DTOS, STOD, DTOH, HTOD, STOH, HTOS, SIN, COS, ATAN.  
 
-# Real-Time Debug On-Chip
+### Real-Time Debug On-Chip
 
 Additionally, this design comes with on-chip debug capability. Each thread has independent h/w breakpoints with programmable pass-counters, single-steps, 4-level deep PC discontinuity trace buffer, and real-time data exchange/monitoring. Thread registers can be read and modified in real-time without affecting ongoing processes. Threads can be independently or simultaneously breakpointed, single-stepped or released. Presently all this is done through a generic port which can be matted with a JTAG TAP, CPU I/O port, AXI4, etc. The test bench provided at this repository has examples of breakpoints, single-steps, etc.
 
@@ -37,9 +37,10 @@ http://www.cdadapter.com/download/cross32.pdf
 
 Continue reading below the block diagram to find out more about this design, the instruction set, how to set up the simulation, etc.  If you have any questions, you can direct them to me at: sympl.gpu@gmail.com
 
-[Click here to see the block diagram (116kB)](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/tree/master/Doc/images/Block_diagram_96dpi.png)
+[Click here to see the block diagram (116kB)]
+(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/tree/master/Doc/images/Block_diagram_96dpi.png)
 
-# SYMPL64 ISA General Description
+## SYMPL64 ISA General Description
 
 The SYMPL64 Compute Instruction Set Architecture contains no "op-codes".  All operators, including PC, Stack, Status, Auxiliary Registers, logical, shift, integer and floating-point operators are memory-mapped.  Each logic, shift, integer and floating-point operator occupies 16 locations in each thread-unit's memory map, each accepting up to two, 8, 16, 32, or 64-bit operands simultaneously, in any combination.
 
@@ -50,56 +51,42 @@ SYMPL64 Compute Unit employs a modified Harvard architecture, meaning that it ha
 Included in this SYMPL64 ISA repository is an instruction table that can be used with “CROSS-32” Universal Cross-assembler to assemble/compile executables written in either SYMPL64 Intermediate Language (IL), SYMPL64 assembly language or in-line mix of both.
 
 If you plan to write in pure assembly language, the only mnemonic you need to remember is “.”, which means: “MOV”. Of course, if you like to type, you can also use “MOV” or “m”. This example shows what a shift instruction looks like in SYMPL64 assembly language:
-
+```
 .   uw:shft.0, uw:triangles, RIGHT, 1           ;divide total triangles x2 to determine number of triangles per thread
-
 .   uw:triDivXn, uw:shft.0                      ;move result out of shift operator result buffer 0 into memory 
-
+```
 In the example above, “uw” means destination is unsigned 32-bit word that is pushed into shift operator input 0.  The value being shifted is unsigned (32-bit) word “triangles”.  The operation to be done is shift “triangles” right by one bit position.  Note that a thread's STATUS register is not updated until a result is read out of a given operator's result buffer.  Simply moving data around from one non-operator memory location to another has no affect on a thread's STATUS register.
 
 Here is the same instruction sequence written in SYMPL64 IL:
-
+```
 uw   shft.0 = SHFT:(uw:triangles, RIGHT, 1)
-
 uw   triDivXn = uw:shft.0
-
+```
 Instruction bit field definitions common to both direct and indirect addressing modes:
-
+```
 RM[1:0] Directed Rounding Mode specifier for float results
-
-00 = round nearest
-
-01 = round to positive infinity
-
-10 = round to negative infinity
-
-11 = round to zero 
+  00 = round nearest
+  01 = round to positive infinity
+  10 = round to negative infinity
+  11 = round to zero 
 
 IM[1:0] Specifies from which memory the operand read is to take place
-
-00 = both operand A and operand B are read from data memory using either direct or indirect addressing modes
-
-01 = operand A is either direct or indirect and operand B is 8 or 16-bit immediate
-
-10 = operand A is read from program memory using direct table read from program memory addressing mode operand B is either direct or indirect and NEVER immediate
-
-11 = 32-bit immediate
+  00 = both operand A and operand B are read from data memory using either direct or indirect addressing modes
+  01 = operand A is either direct or indirect and operand B is 8 or 16-bit immediate
+  10 = operand A is read from program memory using direct table read from program memory addressing mode operand B is 
+       either direct or indirect and NEVER immediate
+  11 = 32-bit immediate
 
 SEXT 1 = signed (sign-extended); 0 = unsigned (zero-extended)
 
 LEN[1:0] Length/size, in bytes, of source/destination
-
-00 = 1 byte
-
-01 = 2 bytes (half-word)
-
-10 = 4 bytes (word)
-
-11 = 8 bytes (double-word)
-
+  00 = 1 byte
+  01 = 2 bytes (half-word)
+  10 = 4 bytes (word)
+  11 = 8 bytes (double-word)
+  
 IND 1 = indirect addressing mode for that field
-
-0 = direct addressing mode for that field
+  0 = direct addressing mode for that field
 
 IMOD is used with IND = 1, meaning it is only used with indirect addressing mode for a given field
 
@@ -107,21 +94,19 @@ IMOD = 1 means: use signed AMOUNT field + ARn contents for effective address; AR
 
 for example:
 
-uw   shft.0 = SHFT:(uw:*AR2[45], RIGHT, 3)
+    uw   shft.0 = SHFT:(uw:*AR2[45], RIGHT, 3)
+    uw   shft.1 = SHFT:(uw:*AR1[-20], RIGHT, 3)
 
-uw   shft.1 = SHFT:(uw:*AR1[-20], RIGHT, 3)
-
-IMOD = 0 means: use ARn contents as pointer for read or write. Then automatically post-modify the contents of ARn 
-by adding or subtracting UNsigned AMOUNT field to/from it.
+IMOD = 0 means: use ARn contents as pointer for read or write. Then automatically post-modify 
+         the contents of ARn by adding or subtracting UNsigned AMOUNT field to/from it.
 
 for example:
 
-uw   shft.0 = SHFT:(uw:*AR2++[8], RIGHT, 3)
-
-uw   shft.1 = SHFT:(uw:*AR1--[5], LEFT, 6)
-
+   uw   shft.0 = SHFT:(uw:*AR2++[8], RIGHT, 3)
+   uw   shft.1 = SHFT:(uw:*AR1--[5], LEFT, 6)
+```
 -------------------------------------------------------------------------------------
-# *Indirect Addressing Mode Instruction Format
+## *Indirect Addressing Mode Instruction Format
 
 note: indirect addressing mode can be mixed and matched with:
 - indirect addressing mode (any combination)
@@ -146,35 +131,28 @@ Indirect Address Mode Syntax
 Immediately preceding any of the above ARn or SP with “*” signals the assembler that the specified ARn or SP is to be used as an indirect pointer. Post-fixing the specified auxiliary register or SP with either “++” or “--” signals post-modification mode. If the post-modification signal is absent, then it's relative indirect mode. For indirect addressing, both indirect with post-modification and relative indirect must have an amount specified in the immediately following square brackets. 
 
 Indirect Relative (example):
-
+```
 uw   AR0 = uw:#X_start                         ;load AR0 with pointer to X_start
-
 uw   AR1 = uw:#Y_start                         ;load AR1 with pointer to Y_start
-
 uw   fmul.0 = FMUL:(uw:*AR0[0], uw:*AR1[0])    ;push operandA and operandB into input 0 of FMUL operator 
-
+```
 Indirect with Post-Modification (example):
 
 (Note that this example employs the REPEAT instruction to perform 16 floating-point divides by feeding all 16 FDIV operator inputs, such that, by the time the final operand pair is pushed in, at least the first result corresponding to the first push is available to be read out without any stalls) 
-
+```
 uw   AR0 = uw:#X_start           ;immediate load of pointer to X_start
-
 uw   AR1 = uw:#Y_start           ;immediate load of pointer to Y_start
-
 uw   AR2 = uw:#fdiv.0            ;immediate load of pointer to first FDIV operator input
-
 uw   AR3 = uw:#return_buffer
 
-     REPEAT  uw:#15              ;execute and then repeat the following instruction 15 more times for a total of 16 times.
-     
+     REPEAT  uw:#15              ;execute and then repeat the following instruction 15 more times for a total of 16 times.     
 uw   *AR2++[4] = FDIV:(uw:*AR0++[4], uw:*AR1++[4])   ;push new operandA and operandB into input n of FDIV operator 
 
 uw   AR2 = uw:#fdiv.0                                ;point to first FDIV result buffer
 
-     REPEAT uw:#15
-     
+     REPEAT uw:#15     
 uw   *AR3++[4] = uw:*AR2++[4]                        ;pull all 16 FDIV results out
-
+```
 -------------------------------------------------------------------------------------
 # Direct Addressing Mode Instruction Format
 note: direct addressing mode can be mixed and matched with:
@@ -190,15 +168,12 @@ note: direct addressing mode can be mixed and matched with:
 Direct Address Mode Syntax
 
 Only the first 64k bytes of the SYMPL64 address space can be accessed using the direct addressing mode. All thread registers and operators reside within this space so they can be accessed using the direct addressing mode. Here are just a few examples:
-
+```
 uh   LPCNT0 = uh:triangles                       ;load loop counter 0 with number of triangles to process
-
 uw   bclr.0 = BCLR:(uw:STATUS, ub:#Done_bit)     ;clear the status register Done bit
-
 uw   STATUS = bclr.0 
-
 uw   cos.0 = COS:(uh:rotateX_amount)
-
+```
 ----------------------------------------------------------------------------------
 # #Immediate Addressing Mode Instruction Format
 Note: immediate addressing mode must not be used with table-read
@@ -228,10 +203,10 @@ Preceding a srcA value with the “@” character signals the assembler that src
 @srcA operands must not appear on the same assembly line as #srcB (#immediate) operands. @table-read is useful for directly retrieving parameters sourced in program memory. 
 
 Example:
-
+```
 uw   AR0 = ud:@pbuf_start           ;load AR0 with parameter buffer start location specified in program memory
                                     ;in this example, the upper 32 bits are truncated/ignored (assuming AR0 is 32 bits wide).
-
+```
 --------------------------------------------------------------------------------
 # Bit Test and Branch (if Set) Operator Format 
 note: test bit# of contents of srcA
@@ -281,73 +256,71 @@ Instead of opcodes, the SYMPL64 ISA employs a repertoire of stand-alone, memory-
 
 Additionally, each operator result buffer has its own automatic semaphoree, such that, when operands are pushed into a given operator's one-of-sixteen inputs (as seen by a given thread), the semaphoree for the corresponding result buffer is automatically cleared to indicate “not-ready” and held in that state until the result is automatically written to such result buffer, at which time, the semaphoree is automatically set to indicate results are available for reading.  If the instruction stream attempts to read a result buffer location corresponding to an operator push that hasn't spilled out yet, such access attempt will result in a stall for that thread's time slot each time it comes around and will continue until results are automatically written to that specific result buffer location.
 
-When large amounts of data are being computed using longer execution cycle operators such as FDIV, LOG, EXP, etc., the foregoing stall scenario should rarely, if ever, occur. The reason is, with 16 result buffer locations, each operator can accept bursts of up to 16 operand pushes in rapid succession. By the time the 16th set of operands have been pushed, the first result has already completed long ago, especially if all four thread-units are doing the same thing. Using four threads to compute 64 floating-point divide operations simultaneously, requires just 64 clocks, not counting the clocks needed to pull results out of all 64 result buffers. By the time the 16th set of operands for each thread-unit's operator input have been pushed, 64 operand sets have been pushed and results for the first four or five pushes of each thread-unit are already available for reading. Using burst-mode computing as just described, with results being read out
- in the same order they were written, a stall is impossible.
+When large amounts of data are being computed using longer execution cycle operators such as FDIV, LOG, EXP, etc., the foregoing stall scenario should rarely, if ever, occur. The reason is, with 16 result buffer locations, each operator can accept bursts of up to 16 operand pushes in rapid succession. By the time the 16th set of operands have been pushed, the first result has already completed long ago, especially if all four thread-units are doing the same thing. Using four threads to compute 64 floating-point divide operations simultaneously, requires just 64 clocks, not counting the clocks needed to pull results out of all 64 result buffers. By the time the 16th set of operands for each thread-unit's operator input have been pushed, 64 operand sets have been pushed and results for the first four or five pushes of each thread-unit are already available for reading. Using burst-mode computing as just described, with results being read out  in the same order they were written, a stall is impossible.
 
 # Operators
 
 Currently implemented operators are listed here. You should note that the following are just labels most folks are familiar with and are only used here to describe what that specific operator does. Each operator resides at a specific location or block of locations in the SYMPL64 Compute Unit memory map.  Refer to the SYMPL64 ISA instruction table in the ASM folder of this repository for the locations where each operator resides.
-
+```
 Logical:
 
-AND
-OR
-XOR
-BSET
-BCLR
-SHFT (seven types, including LEFT, LSL, ASL, ROL, RIGHT, LSR, ASR, ROR)
-MIN
-MAX
-ENDI (handles/changes endian-”ness” and can also be used to concatenate fragments from adjacent addresses)
+ AND
+ OR
+ XOR
+ BSET
+ BCLR
+ SHFT (seven types, including LEFT, LSL, ASL, ROL, RIGHT, LSR, ASR, ROR)
+ MIN
+ MAX
+ ENDI (handles/changes endian-”ness” and can also be used to concatenate fragments from adjacent addresses)
 
 Branching:
 
-BTBS (bit-test and branch if set)
-BTBC (bit-test and branch if clear)
-BRAL (unconditional long relative branch)
-JUMP (unconditional long absolute jump)
-DBNZ (decrement-branch-not-zero uses one of two h/w loop counters)
+ BTBS (bit-test and branch if set)
+ BTBC (bit-test and branch if clear)
+ BRAL (unconditional long relative branch)
+ JUMP (unconditional long absolute jump)
+ DBNZ (decrement-branch-not-zero uses one of two h/w loop counters)
 
 Integer arithmetic:
 
-ADD
-SUB 
-MUL (single-clock) 32x32
-DIV (place-holder, but not yet implemented)
-SIN (integer input in degrees, single-precision float result out)
-COS 
-TAN 
-COT 
+ ADD
+ SUB 
+ MUL (single-clock) 32x32
+ DIV (place-holder, but not yet implemented)
+ SIN (integer input in degrees, single-precision float result out)
+ COS 
+ TAN 
+ COT 
 
-RPT N (execute and then repeat the immediately following instruction N times)
+ RPT N (execute and then repeat the immediately following instruction N times)
 
 Floating-point: (presently single-precision, but half and double-precision are on the way)
 
-FADD
-FSUB
-FMUL
-FMA (C-Reg should be written to first before pushing operandA and operandB into FMA)
-DOT (note that in this implementation, DOT uses the same physical operator as FMA) 
-FDIV
-SQRT
-LOG
-EXP 
-PWR (place-holder for now)
-FTOI
-ITOF
-STOH (place-holder for now)
-STOD (place-holder for now)
-HTOS (place-holder for now)
-HTOD (place-holder for now)
-DTOS (place-holder for now)
-DTOH (place-holder for now)
-
+ FADD
+ FSUB
+ FMULFMA (C-Reg should be written to first before pushing operandA and operandB into FMA)
+ DOT (note that in this implementation, DOT uses the same physical operator as FMA) 
+ FDIV
+ SQRT
+ LOG
+ EXP 
+ PWR (place-holder for now)
+ FTOI
+ ITOF
+ STOH (place-holder for now)
+ STOD (place-holder for now)
+ HTOS (place-holder for now)
+ HTOD (place-holder for now)
+ DTOS (place-holder for now)
+ DTOH (place-holder for now)
+```
 ------------------------------------------------------------------------------------------
 
 # SYMPL Intermediate Language (IL) Aliases of “MOVE”
 
 Below are just a few examples of “MOVE” aliases. Study the SYMPL64 instruction table to get the gist on how to create your own aliases.
-
+```
 FOR (LPCNT0 = uw:triangles) (        ;the text in blue is an alias for simply loading the hardware loop counter “LPCNT0” with an integer
 
     loop:                            ;entry point to the code comprising the loop
@@ -388,7 +361,7 @@ IF (uw:some_address:[bit_number]==0) GOTO: label    ;another alias for bit-test-
 IF (uw:some_address:[bit_number]==1) GOTO: label    ;another alias for bit-test-and-branch-if-set,  an alias for a move instruction
 
 REPEAT                                              ;an alias of a move to repeat counter some value
-
+```
 ------------------------------------------------------------------------------------------
 # Simulating this Design
 
