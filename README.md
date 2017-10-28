@@ -1,7 +1,7 @@
 ![](https://github.com/jerry-D/SYMPL-FP324-AXI4-GP-GPU/blob/master/web_logo.jpg)
 
 ## SYMPL “Opcode-less” Instruction Set Architecture (ISA) for a 64-Bit Interleaving, Multi-threading GP-GPU Compute Unit 
-###Featuring: FloPoCo--Generated Floating-Point Operators
+### Featuring: FloPoCo--Generated Floating-Point Operators
 
 At this repository you will find all the Verilog RTL source code needed to simulate and synthesize the opcode-less, 64-bit GP-GPU Compute Unit shown in the block diagram below. The purpose of the instant design is to demonstrate the SYMPL 64-bit ISA and to provide an easy-to-modify template that can be used to evaluate and test various operators, especially FloPoCo-generated operators. 
 
