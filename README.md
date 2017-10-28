@@ -51,7 +51,8 @@ Included in this SYMPL64 ISA repository is an instruction table that can be used
 
 If you plan to write in pure assembly language, the only mnemonic you need to remember is “.”, which means: “MOV”. Of course, if you like to type, you can also use “MOV” or “m”. This example shows what a shift instruction looks like in SYMPL64 assembly language:
 
-.   uw:shft.0, uw:triangles, RIGHT, 1           ;divide total triangles x2 to determine number of triangles per thread 
+.   uw:shft.0, uw:triangles, RIGHT, 1           ;divide total triangles x2 to determine number of triangles per thread
+
 .   uw:triDivXn, uw:shft.0                      ;move result out of shift operator result buffer 0 into memory 
 
 In the example above, “uw” means destination is unsigned 32-bit word that is pushed into shift operator input 0.  The value being shifted is unsigned (32-bit) word “triangles”.  The operation to be done is shift “triangles” right by one bit position.  Note that a thread's STATUS register is not updated until a result is read out of a given operator's result buffer.  Simply moving data around from one non-operator memory location to another has no affect on a thread's STATUS register.
@@ -59,6 +60,7 @@ In the example above, “uw” means destination is unsigned 32-bit word that is
 Here is the same instruction sequence written in SYMPL64 IL:
 
 uw   shft.0 = SHFT:(uw:triangles, RIGHT, 1)
+
 uw   triDivXn = uw:shft.0
 
 Instruction bit field definitions common to both direct and indirect addressing modes:
@@ -66,16 +68,21 @@ Instruction bit field definitions common to both direct and indirect addressing 
 RM[1:0] Directed Rounding Mode specifier for float results
 
 00 = round nearest
+
 01 = round to positive infinity
+
 10 = round to negative infinity
+
 11 = round to zero 
 
 IM[1:0] Specifies from which memory the operand read is to take place
 
 00 = both operand A and operand B are read from data memory using either direct or indirect addressing modes
+
 01 = operand A is either direct or indirect and operand B is 8 or 16-bit immediate
-10 = operand A is read from program memory using direct table read from program memory addressing mode operand B 
-is either direct or indirect and NEVER immediate
+
+10 = operand A is read from program memory using direct table read from program memory addressing mode operand B is either direct or indirect and NEVER immediate
+
 11 = 32-bit immediate
 
 SEXT 1 = signed (sign-extended); 0 = unsigned (zero-extended)
@@ -83,11 +90,15 @@ SEXT 1 = signed (sign-extended); 0 = unsigned (zero-extended)
 LEN[1:0] Length/size, in bytes, of source/destination
 
 00 = 1 byte
+
 01 = 2 bytes (half-word)
+
 10 = 4 bytes (word)
+
 11 = 8 bytes (double-word)
 
 IND 1 = indirect addressing mode for that field
+
 0 = direct addressing mode for that field
 
 IMOD is used with IND = 1, meaning it is only used with indirect addressing mode for a given field
@@ -97,6 +108,7 @@ IMOD = 1 means: use signed AMOUNT field + ARn contents for effective address; AR
 for example:
 
 uw   shft.0 = SHFT:(uw:*AR2[45], RIGHT, 3)
+
 uw   shft.1 = SHFT:(uw:*AR1[-20], RIGHT, 3)
 
 IMOD = 0 means: use ARn contents as pointer for read or write. Then automatically post-modify the contents of ARn 
@@ -105,6 +117,7 @@ by adding or subtracting UNsigned AMOUNT field to/from it.
 for example:
 
 uw   shft.0 = SHFT:(uw:*AR2++[8], RIGHT, 3)
+
 uw   shft.1 = SHFT:(uw:*AR1--[5], LEFT, 6)
 
 -------------------------------------------------------------------------------------
@@ -135,7 +148,9 @@ Immediately preceding any of the above ARn or SP with “*” signals the assemb
 Indirect Relative (example):
 
 uw   AR0 = uw:#X_start                         ;load AR0 with pointer to X_start
+
 uw   AR1 = uw:#Y_start                         ;load AR1 with pointer to Y_start
+
 uw   fmul.0 = FMUL:(uw:*AR0[0], uw:*AR1[0])    ;push operandA and operandB into input 0 of FMUL operator 
 
 Indirect with Post-Modification (example):
@@ -143,8 +158,11 @@ Indirect with Post-Modification (example):
 (Note that this example employs the REPEAT instruction to perform 16 floating-point divides by feeding all 16 FDIV operator inputs, such that, by the time the final operand pair is pushed in, at least the first result corresponding to the first push is available to be read out without any stalls) 
 
 uw   AR0 = uw:#X_start           ;immediate load of pointer to X_start
+
 uw   AR1 = uw:#Y_start           ;immediate load of pointer to Y_start
+
 uw   AR2 = uw:#fdiv.0            ;immediate load of pointer to first FDIV operator input
+
 uw   AR3 = uw:#return_buffer
 
      REPEAT  uw:#15              ;execute and then repeat the following instruction 15 more times for a total of 16 times.
@@ -152,7 +170,9 @@ uw   AR3 = uw:#return_buffer
 uw   *AR2++[4] = FDIV:(uw:*AR0++[4], uw:*AR1++[4])   ;push new operandA and operandB into input n of FDIV operator 
 
 uw   AR2 = uw:#fdiv.0                                ;point to first FDIV result buffer
+
      REPEAT uw:#15
+     
 uw   *AR3++[4] = uw:*AR2++[4]                        ;pull all 16 FDIV results out
 
 -------------------------------------------------------------------------------------
@@ -174,6 +194,7 @@ Only the first 64k bytes of the SYMPL64 address space can be accessed using the 
 uh   LPCNT0 = uh:triangles                       ;load loop counter 0 with number of triangles to process
 
 uw   bclr.0 = BCLR:(uw:STATUS, ub:#Done_bit)     ;clear the status register Done bit
+
 uw   STATUS = bclr.0 
 
 uw   cos.0 = COS:(uh:rotateX_amount)
