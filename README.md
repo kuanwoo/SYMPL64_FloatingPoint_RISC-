@@ -61,7 +61,6 @@ Here is the same instruction sequence written in SYMPL64 IL:
 uw   shft.0 = SHFT:(uw:triangles, RIGHT, 1)
 uw   triDivXn = uw:shft.0
 
-
 Instruction bit field definitions common to both direct and indirect addressing modes:
 
 RM[1:0] Directed Rounding Mode specifier for float results
