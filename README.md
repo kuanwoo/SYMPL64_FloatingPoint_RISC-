@@ -119,7 +119,7 @@ note: indirect addressing mode can be mixed and matched with:
 - table-read from program memory as srcA when using it as a single operand
 - immediate data and table-read address modes must not appear on the same line
 
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/indirect.png)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/indirect.png)
 
 SYMPL64 ISA presently provides eight memory-mapped registers for use as indirect address pointers:
 AR0, AR1, AR2, AR3, AR4, AR5, AR6 and SP.  Refer to the SYMPL64 ISA instruction table in the ASM folder for their respective addresses.
@@ -166,7 +166,7 @@ note: direct addressing mode can be mixed and matched with:
 - table-read from program memory for srcA for single operand
 - immediate data and table-read address modes must not appear on the same line
 
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/direct.png)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/direct.png)
 
 Direct Address Mode Syntax
 
@@ -184,7 +184,7 @@ uw   cos.0 = COS:(uh:rotateX_amount)
 Note: immediate addressing mode must not be used with table-read
 addressing mode on the same assembly line
 
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/immediate.png)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/immediate.png)
 
 Immediate Address Mode Syntax
 
@@ -199,7 +199,7 @@ directly from program memory, either alone or in combination with a direct or
 indirect srcB data memory operand. The @table-read addressing mode must not be 
 used with immediate addressing mode operands on the same assembly line. 
 
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/table_read.png)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/table_read.png)
 
 @Table-Read Address Mode Syntax
 
@@ -219,7 +219,7 @@ if set, then load PC with relative +/- displacement
 srcA can be direct or indirect address mode
 range is -8192 to +8191 from thread's PC
 
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/BTBS.png)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/BTBS.png)
 
 
 --------------------------------------------------------------------------------
@@ -229,7 +229,7 @@ if clear, then load PC with relative +/- displacement
 srcA can be direct or indirect address mode
 range is -8192 to +8191 from thread's PC
 
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/BTBC.png)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/BTBC.png)
 
 -----------------------------------------------------------------------------------
 # (Long) Unconditional Branch Operator Format
@@ -238,7 +238,7 @@ load PC with relative +/- displacement
 srcB can be direct or indirect address mode 
 range is -2147483648 to +2147483647 from thread's PC 
 
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/bral.png)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/bral.png)
 
 --------------------------------------------------------------------------------
 # Shift Operator Format
@@ -247,7 +247,7 @@ using the specified shift mode. It affects C, Z and N
 when the result is read out of the specified (1 of 16)
 SHFT result buffers. 
 
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/shift.png)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/shift.png)
 
 # No Opcodes
 
@@ -374,11 +374,11 @@ REPEAT                                              ;an alias of a move to repea
 
 This repository contains all the files you need to simulate the transformation of the “olive” shown at the center of the “before and after” .gif animation below and actually write a transformed .stl file that you can view using any .stl file viewer.  The parameters used in the simulation are listed in the animation. The transformation involves rotate, translate and scale on all three axis. The granularity of the 3D model is coarse to keep simulation time down.
 
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/olive_trans_both.gif)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/olive_trans_both.gif)
 
 If you don't like the “olive”, there a couple other .stl files in this repository you can transform using the same test bench. One is “ring.stl” and the other is “small_diamond.stl”.  The image below is a before and after shot of the ring using the same parameters as the “olive”. 
 
-(https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/Ring_b_a.jpg)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/Ring_b_a.jpg)
 
 In the ASM folder is the original SYMPL IL source code used to perform this transformation. In the same folder is a “.v” hex formatted file that is loaded into the SYMPL Compute Unit's program RAM block using the Verilog $readmemh statement as shown below and which is found the “rom4kx64.v” file.  Thus you will need to make sure you place the “.v” formatted hex file in your working simulation directory so that it can be loaded into program memory. Alternatively, if you would prefer to load the “.v” hex file manually, you can use the host port, as both program and global data memory can be accessed by it.
 
