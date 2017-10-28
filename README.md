@@ -37,7 +37,7 @@ http://www.cdadapter.com/download/cross32.pdf
 
 Continue reading below the block diagram to find out more about this design, the instruction set, how to set up the simulation, etc.  If you have any questions, you can direct them to me at: sympl.gpu@gmail.com
 
-[SYMPL 64-Bit ISA GP-GPU Compute Unit](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/tree/master/Doc/images/Block_diagram_96dpi.png)
+![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/tree/master/Doc/images/Block_diagram_96dpi.png)
 
 # SYMPL64 ISA General Description
 
