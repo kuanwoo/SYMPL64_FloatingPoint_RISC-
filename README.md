@@ -254,7 +254,7 @@ Furthermore, by eliminating the chore of fetching, decoding and executing opcode
 
 Instead of opcodes, the SYMPL64 ISA employs a repertoire of stand-alone, memory-mapped “operators”, each with its own pipeline and each having 16 randomly addressable result buffers that results automatically spill into on completion of that operator's execution cycle.  This combined with the SYMPL64's four interleaving threads, long latentcies for such operations as FDIV, LOG, EXP can be more easily hid, if not eliminated altogether. The operators can accept a new set of operands every clock cycle. All four threads share the same operators, but each thread has its own private set of result buffers that results automatically spill into.
 
-Additionally, each operator result buffer has its own automatic semaphoree, such that, when operands are pushed into a given operator's one-of-sixteen inputs (as seen by a given thread), the semaphoree for the corresponding result buffer is automatically cleared to indicate “not-ready” and held in that state until the result is automatically written to such result buffer, at which time, the semaphoree is automatically set to indicate results are available for reading.  If the instruction stream attempts to read a result buffer location corresponding to an operator push that hasn't spilled out yet, such access attempt will result in a stall for that thread's time slot each time it comes around and will continue until results are automatically written to that specific result buffer location.
+Additionally, each operator result buffer has its own automatic semaphore, such that, when operands are pushed into a given operator's one-of-sixteen inputs (as seen by a given thread), the semaphore for the corresponding result buffer is automatically cleared to indicate “not-ready” and held in that state until the result is automatically written to such result buffer, at which time, the semaphore is automatically set to indicate results are available for reading.  If the instruction stream attempts to read a result buffer location corresponding to an operator push that hasn't spilled out yet, such access attempt will result in a stall for that thread's time slot each time it comes around and will continue until results are automatically written to that specific result buffer location.
 
 When large amounts of data are being computed using longer execution cycle operators such as FDIV, LOG, EXP, etc., the foregoing stall scenario should rarely, if ever, occur. The reason is, with 16 result buffer locations, each operator can accept bursts of up to 16 operand pushes in rapid succession. By the time the 16th set of operands have been pushed, the first result has already completed long ago, especially if all four thread-units are doing the same thing. Using four threads to compute 64 floating-point divide operations simultaneously, requires just 64 clocks, not counting the clocks needed to pull results out of all 64 result buffers. By the time the 16th set of operands for each thread-unit's operator input have been pushed, 64 operand sets have been pushed and results for the first four or five pushes of each thread-unit are already available for reading. Using burst-mode computing as just described, with results being read out  in the same order they were written, a stall is impossible.
 
@@ -370,15 +370,15 @@ This repository contains all the files you need to simulate the transformation o
 
 ![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/olive_trans_both.gif)
 
-If you don't like the “olive”, there a couple other .stl files in this repository you can transform using the same test bench. One is “ring.stl” and the other is “small_diamond.stl”.  The image below is a before and after shot of the ring using the same parameters as the “olive”. 
+If you don't like the “olive”, there are a couple other .stl files in this repository you can transform using the same test bench. One is “ring.stl” and the other is “small_diamond.stl”.  The image below is a before and after shot of the ring using the same parameters as the “olive”. 
 
 ![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/Ring_b_a.jpg)
 
 In the ASM folder is the original SYMPL IL source code used to perform this transformation. In the same folder is a “.v” hex formatted file that is loaded into the SYMPL Compute Unit's program RAM block using the Verilog $readmemh statement as shown below and which is found the “rom4kx64.v” file.  Thus you will need to make sure you place the “.v” formatted hex file in your working simulation directory so that it can be loaded into program memory. Alternatively, if you would prefer to load the “.v” hex file manually, you can use the host port, as both program and global data memory can be accessed by it.
-
+```
 $readmemh("threeD_xform.v",triportRAMA);
 $readmemh("threeD_xform.v",triportRAMB);
-
+```
 The raw “olive.stl” file also needs to be placed in the same directory because the simulator test.
 
 Finally, you need to make sure you import the test bench “sympl64_test1_tb.v” into your project, as well as all the other design files, before running a simulation. Note that the FloPoCo operators are in the FloPoCo folder because they are in VHDL.  Consequently, when you configure your project, be sure to configure it for “mixed-mode”.
