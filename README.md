@@ -121,7 +121,7 @@ note: indirect addressing mode can be mixed and matched with:
 SYMPL64 ISA presently provides eight memory-mapped registers for use as indirect address pointers:
 AR0, AR1, AR2, AR3, AR4, AR5, AR6 and SP.  Refer to the SYMPL64 ISA instruction table in the ASM folder for their respective addresses.
 
-SP operates as a Stack Pointer, in that it behaves a bit differently than AR0-AR6. Specifically, it supplies a per-decremented value when used as a read pointer. When used as a write pointer, it behaves the same as the auxiliary registers AR0 through AR6.  On RESET, SP is pointing to location 0x00FFF in each thread's memory space.
+SP operates as a Stack Pointer, in that it behaves a bit differently than AR0-AR6. Specifically, it supplies a per-decremented value when used as a read pointer. When used as a write pointer, it behaves the same as the auxiliary registers AR0 through AR6.  On RESET, SP is pointing to location 0x00FF8 in each thread's memory space.
 
 The SYMPL64 provides two indirect addressing modes: Indirect with relative +/- (i.e., signed) offset and indirect with no offset but with automatic +/- post-modification by the amount specified.  The amount of either offset or post-modification is always in bytes to accommodate byte, half-word, word and double-word data sizes.  For instance, if you are moving a block of double-word
  (64-bit) data with automatic post-modification, use “8” as the increment or decrement amount.  If you are moving bytes, use “1”.  If moving words (32-bits), use “4” and so on. The amount of offset for relative indirect is in the range +/- 2047 (bytes).  The amount of automatic post-modification is in the range of 0-4095 (bytes).
