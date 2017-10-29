@@ -1,0 +1,1628 @@
+; Cross-32 instruction table for SYMPL 64-bit GP-GPU Compute Unit  
+; version 1.01   October 18, 2017 
+; Author:  Jerry D. Harthcock
+; Copyright (C) 2017.  All rights reserved.
+; A copy of Cross-32 can be purchased from
+; Data-Sync Engineering at: http://www.cdadapter.com/cross32.htm  sales@datasynceng.com
+; A copy of the Cross-32 manual can be viewed online here:  http://www.cdadapter.com/download/cross32.pdf
+; For instrucion table support, contact the author of this table at: SYMPL.gpu@gmail.com
+;////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+;//                                                                                                                //
+;//             SYMPL 64-BIT RISC, COARSE-GRAINED SCHEDULER (CGS) and GP-GPU SHADER IP CORES                       //
+;//                              Evaluation and Product Development License                                        //
+;//                                                                                                                //
+;// Provided that you comply with all the terms and conditions set forth herein, Jerry D. Harthcock ("licensor"),  //
+;// the original author and exclusive copyright owner of these SYMPL 64-BIT GP-GPU Compute Unit                    //
+;// Verilog RTL IP cores and related development software ("this IP")  hereby grants                               //
+;// to recipient of this IP ("licensee"), a world-wide, paid-up, non-exclusive license to implement this IP in     //
+;// Xilinx, Altera, MicroSemi or Lattice Semiconductor brand FPGAs only and used for the purposes of evaluation,   //
+;// education, and development of end products and related development tools only.  Furthermore, limited to the    //
+;// the purposes of prototyping, evaluation, characterization and testing of their implementation in a hard,       //
+;// custom or semi-custom ASIC, any university or institution of higher education may have their implementation of //
+;// this IP produced for said limited purposes at any foundary of their choosing provided that such prototypes do  //
+;// not ever wind up in commercial circulation with such license extending to said foundary and is in connection   //
+;// with said academic pursuit and under the supervision of said university or institution of higher education.    //
+;//                                                                                                                //
+;// Any customization, modification, or derivative work of this IP must include an exact copy of this license      //
+;// and original copyright notice at the very top of each source file and derived netlist, and, in the case of     //
+;// binaries, a printed copy of this license and/or a text format copy in a separate file distributed with said    //
+;// netlists or binary files having the file name, "LICENSE.txt".  You, the licensee, also agree not to remove     //
+;// any copyright notices from any source file covered under this Evaluation and Product Development License.      //
+;//                                                                                                                //
+;// LICENSOR DOES NOT WARRANT OR GUARANTEE THAT YOUR USE OF THIS IP WILL NOT INFRINGE THE RIGHTS OF OTHERS OR      //
+;// THAT IT IS SUITABLE OR FIT FOR ANY PURPOSE AND THAT YOU, THE LICENSEE, AGREE TO HOLD LICENSOR HARMLESS FROM    //
+;// ANY CLAIM BROUGHT BY YOU OR ANY THIRD PARTY FOR YOUR SUCH USE.                                                 //
+;//                                                                                                                //
+;// Licensor reserves all his rights, including, but in no way limited to, the right to change                     //
+;// or modify the terms and conditions of this Evaluation and Product Development License anytime without notice   //
+;// of any kind to anyone. By using this IP for any purpose, you agree to all the terms and conditions set forth   //
+;// in this Evaluation and Product Development License.                                                            //
+;//                                                                                                                //
+;// This Evaluation and Product Development License does not include the right to sell products that incorporate   //
+;// this IP nor any IP derived from this IP.  If you would like to obtain such a license, please contact Licensor. //                                                                                          //
+;//                                                                                                                //
+;// Licensor can be contacted at:  SYMPL.gpu@gmail.com                                                             //
+;//                                                                                                                //
+;////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+; The SYMPL64 (64-bit) GP-GPU Compute Engine Instruction Set Architecture comprises no "op-codes".  All operators,
+; including PC, Stack, Status, Auxilliary Registers, Logic, Shift, integer and floating-point arithmatic operators
+; are memory-mapped.  Each logic, shift, integer and floating-point operator occupies 16 locations in the GP-GPU
+; memory map, each accepting up to two, 8, 16, 32, or 64-bit operands simultaneously, in any combination.
+
+; The SYMPL64 architecture employs strict typing. Meaning that the destination, sourceA and sourceB have their own  
+; sign-extension and data size fields.  The actual memory-mapped location from/to where the data is read or written
+; determine what type of data it is.  For instance, writing a 64-bit (double-word) to a floating-point operator input
+; location means it's a float and writing to a non-float operator such as ADD, SHFT, etc, means you are writing an
+; integer.    
+
+; SYMPL64 employs a modified Harvard architecture, meaning that it comprises separate program and data memory. It has
+; immediate, direct and indirect addressing modes, as well as table read from program memory using the indirect 
+; addressing mode.
+
+; Instruction bit field definitions common to both direct and indirect addressing modes:
+
+; RM[1:0] Directed Rounding Mode specifier for float results
+; 00 = round nearest
+; 01 = round to positive infinity
+; 10 = round to negative infinity
+; 11 = round to zero 
+
+; IM[1:0] Specifies from which memory the operand read is to take place
+; 00 = both operand A and operand B are read from data memory using either
+;      direct or indirect addressing modes
+; 01 = operand A is either direct or indirect and operand B is immediate
+; 10 = operand A is read from program memory using direct (table read from program memory) addressing modes 
+;      operand B is either direct or indirect and NEVER immediate
+; 11 = 32-bit immediate
+
+; SEXT 1 = signed (sign-extended); 0 = unsigned (zero-extended)
+
+; LEN[1:0] Length, in bytes, of source/destination
+; 00 = 1 byte
+; 01 = 2 bytes (half-word)
+; 10 = 4 bytes (word)
+; 11 = 8 bytes (double-word)
+
+; IND 1 = indirect addressing mode for that field; 0 = direct addressing mode for that field
+;
+; IMOD is used with IND = 1, meaning it is only used with indirect addressing mode for a given field
+; IMOD = 1 means: use signed AMOUNT field + ARn contents for effective address; ARn is not modified
+;
+;          for example,   uw    shft.0 = SHFT(uw:*AR2[45], RIGHT, 3)
+;                         uw    shft.0 = SHFT(uw:*AR1[-20], RIGHT, 3)
+
+; IMOD = 0 means: use ARn contents as pointer for read or write. Then automatically post-modify the contents
+;          of ARn by adding or subtracting UNsigned AMOUNT field to/from it.
+;           
+;          for exampl,    uw    shft.0 = SHFT(uw:*AR2++[8], RIGHT, 3)
+;                         uw    shft.1 = SHFT(uw:*AR1--[5], LEFT, 6)
+                          
+;--------------------------------------------------------------------------------
+;                  *Indirect Addressing Mode Instruction Format
+;                  note: indirect addressing mode can be mixed and matched with:
+;                         - indirect addressing mode (any combination)
+;                         - immediate addressing mode for srcB for dual operands
+;                         - immediate addressing mode for srcA for single operand
+;                         - table-read from program memory for srcA for dual operands
+;                         - table-read from program memory for srcA for single operand
+;                         - immediate data and table-read address modes may not appear on the same line
+;--------------------------------------------------------------------------------
+;         ______________________   ______________________   ______________________
+;        |        DEST          | |        srcA          | |        srcB          |
+;                  11111111112222 2 22 2 2 233333333334444 4 44 4 4 455555555556666                    
+;  01 23 4 56 7 8 901234567890123 4 56 7 8 901234567890123 4 56 7 8 901234567890123
+;  || || | || | | |__________||_| | || | | |__________||_| | || | | |__________||_|
+;  RR II S LL I I  +/- AMOUNT *AR S LL I I  +/- AMOUNT *AR S LL I I  +/- AMOUNT *AR
+;  MM MM E EE N M                 E EE N M                 E EE N M
+;  10 10 X NN D O                 X NN D O                 X NN D O
+;        T 10   D                 T 10   D                 T 10   D 
+;               |_______________|        |_______________|        |_______________|
+;                 DEST[dir addrs]          srcA[dir addrs]          srcB[dir addrs]
+;                                        |_______________|                 |______|
+;                                         @srcA[tabl adrs]             #srcB[8-bit]
+;                                                                  |______________|
+;                                                                     #srcB[16-bit]
+
+;--------------------------------------------------------------------------------
+;                  Direct Addressing Mode Instruction Format
+;                  note:  direct addressing mode can be mixed and matched with:
+;                         - indirect addressing mode (any combination)
+;                         - immediate addressing mode for srcB for dual operands
+;                         - immediate addressing mode for srcA for single operand
+;                         - table-read from program memory for srcA for dual operands
+;                         - table-read from program memory for srcA for single operand
+;                         - immediate data and table-read address modes may not appear on the same line
+;--------------------------------------------------------------------------------
+;         _____________________   _____________________   _____________________
+;        |        DEST         | |        srcA         | |        srcB         |
+;                 11111111112222 2 22 2 2233333333334444 4 44 4 4455555555556666                    
+;  01 23 4 56 7 8901234567890123 4 56 7 8901234567890123 4 56 7 8901234567890123 
+;  || || | || | |______________| | || | |______________| | || | |______________|              
+;  RR II S LL I  DEST[dir addrs] S LL I  srcA[dir addrs] S LL I  srcB[dir addrs]               
+;  MM MM E EE N  |__________||_| E EE N  |__________||_| E EE N  |__________||_|                               
+;  10 10 X NN D   +/- AMOUNT *AR X NN D   +/- AMOUNT *AR X NN D   +/- AMOUNT *AR
+;        T 10                    T 10   |______________| T 10           |______|
+;                                       @srcA[tabl adrs]            #srcB[8-bit]
+;                                                               |______________|
+;                                                                  #srcB[16-bit]
+;                                           |__________________________________|
+;                                                        srcB[32-bit]
+;
+;--------------------------------------------------------------------------------
+;                  #Immediate Addressing Mode Instruction Format
+;                  note: immediate addressing mode may not be used with table-read
+;                        addressing mode on the same line
+;----------------------------------------------------------------------------------
+;         _____________________   _____________________   _____________________
+;        |        DEST         | |        srcA         | |        srcB         |
+;                 11111111112222 2 22 2 2233333333334444 4 44 4 4455555555556666                    
+;  01 23 4 56 7 8901234567890123 4 56 7 8901234567890123 4 56 7 8901234567890123 
+;  || || | || | |______________| | || | |______________| | || |         |______|              
+;  RR II S LL I  DEST[dir addrs] S LL I  srcA[dir addrs] S LL I     #srcB[8-bit]               
+;  MM MM E EE N  |__________||_| E EE N  |__________||_| E EE N |______________|                                
+;  10 10 X NN D   +/- AMOUNT *AR X NN D   +/- AMOUNT *AR X NN D    #srcB[16-bit]
+;        T 10                    T 10                    T 10
+;                                           |__________________________________|
+;                                                       #srcB[32-bit]
+;                                                 
+;--------------------------------------------------------------------------------
+;            @Table-Read from Program Memory Addressing Mode Instruction Format
+;            note: Table-Read addressing mode may not be used with immediate
+;                  addressing mode on the same line
+;                  srcB can be direct or indirect address mode
+;--------------------------------------------------------------------------------
+;         _____________________   _____________________   _____________________
+;        |        DEST         | |        srcA         | |        srcB         |
+;                 11111111112222 2 22 2 2233333333334444 4 44 4 4455555555556666                    
+;  01 23 4 56 7 8901234567890123 4 56 7 8901234567890123 4 56 7 8901234567890123 
+;  || || | || | |______________| | || | |______________| | || | |______________|              
+;  RR II S LL I  DEST[dir addrs] S LL I @srcA[tabl adrs] S LL I  srcB[dir addrs]               
+;  MM MM E EE N  |__________||_| E EE N                  E EE N  |__________||_|                                
+;  10 10 X NN D   +/- AMOUNT *AR X NN D                  X NN D   +/- AMOUNT *AR
+;        T 10                    T 10                    T 10  
+;                                           |__________________________________|
+;                                                        @srcB[32-bit]
+                                                                                                                             
+                                                                
+;--------------------------------------------------------------------------------
+;                  Bit Test and Branch (if Set) Instruction 
+;                  note: test bit# of contents of srcB
+;                        if set, then load PC with relative +/- displacement 
+;                        srcB can be direct or indirect address mode
+;                        range is -8192 to +8191 from Bit Test instruction
+;--------------------------------------------------------------------------------
+;         _____________________   ______________________   ___________________
+;        |        DEST         | |         srcA         | |       srcB        |
+;                 11111111112222 2 22 2  2233333333334444 444444 55555555556666                    
+;  01 23 4 56 7 8901234567890123 4 56 7  8901234567890123 456789 01234567890123               
+;  || || | || | 1111111110100000 | || |  |______________| |____| |____________|              
+;  RR II S LL I   F   F   A   0  S LL I   srcA[dir addrs]  Bit#    +/- Displ                  
+;  MM MM E EE N |______________| E EE N   |__________||_|           -8192 to                       
+;  10 10 X NN D  DEST[dir addrs] X NN D    +/- AMOUNT *AR           +8191
+;        T 10                    T 10   
+
+
+;--------------------------------------------------------------------------------
+;                  Bit Test and Branch (if Clear) Instruction 
+;                  note: test bit# of contents of srcB
+;                        if clear, then load PC with relative +/- displacement 
+;                        srcB can be direct or indirect address mode
+;                        range is -8192 to +8191 from Bit Test instruction
+;--------------------------------------------------------------------------------                  
+;         _____________________   _____________________   ___________________
+;        |        DEST         | |        srcA         | |       srcB        |
+;                 11111111112222 2 22 2 2233333333334444 444444 55555555556666                    
+;  01 23 4 56 7 8901234567890123 4 56 7 8901234567890123 456789 01234567890123               
+;  || || | || | 1111111110010000 | || | |______________| |____| |____________|              
+;  RR II S LL I   F   F   9   8  S LL I  srcA[dir addrs]  Bit#    +/- Displ                
+;  MM MM E EE N |______________| E EE N  |__________||_|           -8192 to         
+;  10 10 X NN D  DEST[dir addrs] X NN D   +/- AMOUNT *AR           +8191
+;        T 10                    T 10                    
+
+
+;-----------------------------------------------------------------------------------
+;                  (Long) Branch Instruction 
+;                  note: unconditional branch relative
+;                        load PC with relative +/- displacement                                              
+;                        srcB can be direct or indirect address mode                                         
+;                        range is -2147483648 to +2147483647 from Branch instruction                         
+;-----------------------------------------------------------------------------------                         
+;         _____________________   ____________________   _____________________
+;        |        DEST         | |        srcA        | |        srcB         |
+;                 11111111112222 2 22 22233333333334444 4 44 4 4455555555556666                    
+;  01 23 4 56 7 8901234567890123 4 56 78901234567890123 4 56 7 8901234567890123               
+;  || || | || | 1111111110010000 | || |    |__________________________________|                             
+;  RR II S LL I   F   F   F   8  S LL I                #srcB[32-bit]                              
+;  MM MM E EE N |______________| E EE N                                  
+;  10 10 X NN D  DEST[dir addrs] X NN D                  
+;        T 10                    T 10                    
+
+
+;--------------------------------------------------------------------------------
+;                  Shift Operator  
+;                  note: shifts the specified data the specified number of times
+;                        using the specified shift mode.  it affects C, Z and N 
+;                        when the result is read out of the specified (1 of 16)
+;                        result buffers.  
+;--------------------------------------------------------------------------------
+;         _____________________   _____________________   _______________________              Shift
+;        |        DEST         | |        srcA         | |         srcB          |        Code Type 
+;                 11111111112222 2 22 2 2233333333334444 4 44 4 445555 5555556 666       ------------              
+;  01 23 4 56 7 8901234567890123 4 56 7 8901234567890123 4 56 7 890123 4567890 123        000 | LEFT     
+;  || || | || | 11011010xxxxxxxx | || | |______________| | || |  |___| xxxxxxx |_|        001 | LSL    
+;  RR II S LL I   D   B   7   8- S LL I  srcB[dir addrs] S LL I  #Bits         Shift      010 | ASL           
+;  MM MM E EE N   D   B   0   0  E EE N  |__________||_| E EE N                Type       011 | ROL
+;  10 10 X NN D |______________| X NN D   +/- AMOUNT *AR X NN D                           100 | RIGHT
+;        T 10    DEST[dir addrs] T 10                    T 10                             101 | LSR                         
+;                                                                                         110 | ASR                         
+;                                                                                         111 | ROR                         
+
+
+                                                                                                                   
+;---------------------------------                                                                              
+;Register/Flag definition section                                                                               
+;---------------------------------                                                                              
+1, "LEFT", "LSL", "ASL", "ROL", "RIGHT", "LSR", "ASR", "ROR"   ;type of SHFT                                       
+2, "AR0", "AR1", "AR2", "AR3", "AR4", "AR5", "AR6", "SP"                                                           
+3, "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31"                           
+                                                                                                                   
+;---------------------------
+;Operand definition section
+;---------------------------
+*
+;NUM	START	LENGTH   EXP    LOW       HIGH         ;COMMENT
+1,	      8,	  16,     #,     0,       0xFFFF       ;direct destination
+2,	     28,      16,     #,     0,       0xFFFF       ;direct SrcA
+3,       48,      16,     #,     0,       0xFFFF       ;direct SrcB
+
+4,       21,	   3,     @2,    0x0,     0x7,        ;indirect destination  
+5,       41,       3,     @2,    0x0,     0x7,        ;indirect SrcA  
+6,       61,       3,     @2,    0x0,     0x7,        ;indirect SrcB 
+
+7,       56,      8,      #,     0x0,    0xFF          ;immediate MOV #8-bits  {srcB} combined
+8,       48,      16,     #,     0x0,    0xFFFF        ;immediate MOV #16-bits {srcB} combined
+9,       32,      32,     #,     0x80000000,   0x7FFFFFFF   ;immediate MOV #32-bits {srcA,srcB} combined
+10,      24,      40,     #,     0x0,     0xFFFFFFFFFF ;40-bit immediate mode is not supported by CROSS-32
+11,       6,       4,     #,     0,       0xF          ;dummy field, to permit inclusion of operator name as "OP:"(srcA, srcB)
+;12,      54,      10,    {#-$}, $-512,  $+511         ;relative branch
+12,      50,      14,     {#-$}, $-8192,  $+8191       ;relative branch
+13,      44,       6,     #,     0,       63           ;bit number for btbs/c instructions
+
+14,      61,       3,     @1,    0,       0x7          ;shift type
+
+15,      24,       3,     #,     0,       0x7          ;signed, unsigned, byte, half-word, word, or double-word (64-bits) --for operandA
+16,      44,       3,     #,     0,       0x7          ;signed, unsigned, byte, half-word, word, or double-word (64-bits) --for operandB
+
+17,      49,       5,     @3,    0,       31           ;shift amount
+
+18,       9,      12,     #, -2047,      +2047         ;indirect destination offset e.g., *AR1[-20]
+19,       9,      12,     #,     0,       4095         ;indirect destination with automatic ARn post-increment by specified amount e.g., *AR3++[4]
+20,       9,      12,     {0-#}, 0,       4095         ;indirect destination with automatic ARn post-decrement by specified amount e.g., *AR3--[8]
+
+21,       29,      12,    #, -2047,      +2047         ;indirect srcA offset e.g., *AR1[-20]
+22,       29,      12,    #,     0,       4095         ;indirect srcA with automatic ARn post-increment by specified amount e.g., *AR3++[4]
+23,       29,      12,    {0-#}, 0,       4095         ;indirect srcA with automatic ARn post-decrement by specified amount e.g., *AR3--[8]
+
+24,       49,      12,    #, -2047,      +2047         ;indirect srcA offset e.g., *AR1[-20]
+25,       49,      12,    #,     0,       4095         ;indirect srcB with automatic ARn post-increment by specified amount e.g., *AR3++[4]
+26,       49,      12,    {0-#}, 0,       4095         ;indirect srcB with automatic ARn post-decrement by specified amount e.g., *AR3--[8]
+27,       32,      32,    {#-$}, 0x80000000, 0x7FFFFFFF   ; relative long branch 
+28,        4,       3,    #,     0,       3            ;signed, unsigned, byte, half-word, word, or double-word (64-bits) --for Destination
+29,       32,      32,    #,     0x80000000,   0x7FFFFFFF   ;direct MOV 32-bits {srcA,srcB} combined
+
+;-------------------------------------------------------------
+; SYMPL INTERMEDIATE LANGUAGE (IL) addressing modes section
+;-------------------------------------------------------------
+*                                     
+
+1,{1}={16}:#{7}^1000000000000000:                    ;MOV#8
+2,*{4}[{18}]={16}:#{7}^1080000000000000:             ;MOV#8
+3,*{4}++[{19}]={16}:#{7}^1000000000000000:           ;MOV#8
+4,*{4}--[{20}]={16}:#{7}^1000000000000000:           ;MOV#8
+5,{1}={16}:#{8}^1000000000000000:                    ;MOV#16
+6,*{4}[{18}]={16}:#{8}^1080000000000000:             ;MOV#16
+7,*{4}++[{19}]={16}:#{8}^1000000000000000:           ;MOV#16
+8,*{4}--[{20}]={16}:#{8}^1000000000000000:           ;MOV#16
+9,{1}={15}:#{9}^3000000000000000:                    ;MOV#32
+10,*{4}[{18}]={15}:#{9}^3080000000000000:            ;MOV#32
+11,*{4}++[{19}]={15}:#{9}^3000000000000000:          ;MOV#32
+12,*{4}--[{20}]={15}:#{9}^3000000000000000:          ;MOV#32
+13,{1}=#{10}^3000000000000000:                       ;MOV#40 40-bit immediate mode is not supported by CROSS-32
+14,*{4}[{18}]=#{10}^3180000000000000:                ;MOV#40 40-bit immediate mode is not supported by CROSS-32
+15,*{4}++[{19}]=#{10}^3100000000000000:              ;MOV#40 40-bit immediate mode is not supported by CROSS-32
+16,*{4}--[{20}]=#{10}^3100000000000000:              ;MOV#40 40-bit immediate mode is not supported by CROSS-32
+17,{1}={15}:{2}^0000000000000000:
+18,{1}={15}:*{5}[{21}]^0000001800000000:
+19,{1}={15}:*{5}++[{22}]^0000001000000000:
+20,{1}={15}:*{5}--[{23}]^0000001000000000:
+21,*{4}[{18}]={15}:{2}^0180000000000000:
+22,*{4}[{18}]={15}:*{5}[{21}]^0180001800000000:
+23,*{4}[{18}]={15}:*{5}++[{22}]^0180001000000000:
+24,*{4}[{18}]={15}:*{5}--[{23}]^0180001000000000:
+25,*{4}++[{19}]={15}:{2}^0100000000000000:
+26,*{4}++[{19}]={15}:*{5}[{21}]^0100001800000000:
+27,*{4}++[{19}]={15}:*{5}++[{22}]^0100001000000000:
+28,*{4}++[{19}]={15}:*{5}--[{23}]^0100001000000000:
+29,*{4}--[{20}]={15}:{2}^0100000000000000:
+30,*{4}--[{20}]={15}:*{5}[{21}]^0100001800000000:
+31,*{4}--[{20}]={15}:*{5}++[{22}]^0100001000000000:
+32,*{4}--[{20}]={15}:*{5}--[{23}]^0100001000000000:
+33,{1}={15}:@{2}^2000000000000000:
+34,*{4}[{18}]={15}:@{2}^2180000000000000:
+35,*{4}++[{19}]={15}:@{2}^2100000000000000:
+36,*{4}--[{20}]={15}:@{2}^2100000000000000:
+37,{1}={11}:({15}:@{2})^2000000000000000:
+38,*{4}[{18}]={11}:({15}:@{2})^2180000000000000:
+39,*{4}++[{19}]={11}:({15}:@{2})^2100000000000000:
+40,*{4}--[{20}]={11}:({15}:@{2})^2100000000000000:
+41,{1}={11}:({15}:{2})^0000000000000000:
+42,{1}={11}:({15}:*{5}[{21}])^0000001800000000:
+43,{1}={11}:({15}:*{5}++[{22}])^0000001000000000:
+44,{1}={11}:({15}:*{5}--[{23}])^0000001000000000:
+45,*{4}[{18}]={11}:({15}:{2})^0180000000000000:
+46,*{4}[{18}]={11}:({15}:*{5}[{21}])^0180001800000000:
+47,*{4}[{18}]={11}:({15}:*{5}++[{22}])^0180001000000000:
+48,*{4}[{18}]={11}:({15}:*{5}--[{23}])^0180001000000000:
+49,*{4}++[{19}]={11}:({15}:{2})^0100000000000000:
+50,*{4}++[{19}]={11}:({15}:*{5}[{21}])^0100001800000000:
+51,*{4}++[{19}]={11}:({15}:*{5}++[{22}])^0100001000000000:
+52,*{4}++[{19}]={11}:({15}:*{5}--[{23}])^0100001000000000:
+53,*{4}--[{20}]={11}:({15}:{2})^0100000000000000:
+54,*{4}--[{20}]={11}:({15}:*{5}[{21}])^0100001800000000:
+55,*{4}--[{20}]={11}:({15}:*{5}++[{22}])^0100001000000000:
+56,*{4}--[{20}]={11}:({15}:*{5}--[{23}])^0100001000000000:
+57,{1}={11}:({15}:@{2},{16}:{3})^2000000000000000:
+58,{1}={11}:({15}:@{2},{16}:*{6}[{24}])^2000000000018000:
+59,{1}={11}:({15}:@{2},{16}:*{6}++[{25}])^2000000000010000:
+60,{1}={11}:({15}:@{2},{16}:*{6}--[{26}])^2000000000010000:
+61,*{4}[{18}]={11}:({15}:@{2},{16}:{3})^2180000000000000:
+62,*{4}[{18}]={11}:({15}:@{2},{16}:*{6}[{24}])^2180000000018000:
+63,*{4}[{18}]={11}:({15}:@{2},{16}:*{6}++[{25}])^2180000000010000:
+64,*{4}[{18}]={11}:({15}:@{2},{16}:*{6}--[{26}])^2180000000010000:
+65,*{4}++[{19}]={11}:({15}:@{2},{16}:{3})^2100000000000000:
+66,*{4}++[{19}]={11}:({15}:@{2},{16}:*{6}[{24}])^2100000000018000:
+67,*{4}++[{19}]={11}:({15}:@{2},{16}:*{6}++[{25}])^2100000000010000:
+68,*{4}++[{19}]={11}:({15}:@{2},{16}:*{6}--[{26}])^2100000000010000:
+69,*{4}--[{20}]={11}:({15}:@{2},{16}:{3})^2100000000000000:
+70,*{4}--[{20}]={11}:({15}:@{2},{16}:*{6}[{24}])^2100000000018000:
+71,*{4}--[{20}]={11}:({15}:@{2},{16}:*{6}++[{25}])^2100000000010000:
+72,*{4}--[{20}]={11}:({15}:@{2},{16}:*{6}--[{26}])^2100000000010000:
+73,{1}={11}:({15}:{2},{16}:#{8})^1000000000000000:
+74,{1}={11}:({15}:*{5}[{21}],{16}:#{8})^1000001800000000:
+75,{1}={11}:({15}:*{5}++[{22}],{16}:#{8})^1000001000000000:
+76,{1}={11}:({15}:*{5}--[{23}],{16}:#{8})^1000001000000000:
+77,*{4}[{18}]={11}:({15}:{2},{16}:#{8})^1180000000000000:
+78,*{4}[{18}]={11}:({15}:*{5}[{21}],{16}:#{8})^1180001800000000:
+79,*{4}[{18}]={11}:({15}:*{5}++[{22}],{16}:#{8})^1180001000000000:
+80,*{4}[{18}]={11}:({15}:*{5}--[{23}],{16}:#{8})^1180001000000000:
+81,*{4}++[{19}]={11}:({15}:{2},{16}:#{8})^1100000000000000:
+82,*{4}++[{19}]={11}:({15}:*{5}[{21}],{16}:#{8})^1100001800000000:
+83,*{4}++[{19}]={11}:({15}:*{5}++[{22}],{16}:#{8})^1100001000000000:
+84,*{4}++[{19}]={11}:({15}:*{5}--[{23}],{16}:#{8})^1100001000000000:
+85,*{4}--[{20}]={11}:({15}:{2},{16}:#{8})^1100000000000000:
+86,*{4}--[{20}]={11}:({15}:*{5}[{21}],{16}:#{8})^1100001800000000:
+87,*{4}--[{20}]={11}:({15}:*{5}++[{22}],{16}:#{8})^1100001000000000:
+88,*{4}--[{20}]={11}:({15}:*{5}--[{23}],{16}:#{8})^1100001000000000:
+89,{1}={11}:({15}:{2},{16}:{3})^0000000000000000:
+90,{1}={11}:({15}:{2},{16}:*{6}[{24}])^0000000000018000:
+91,{1}={11}:({15}:{2},{16}:*{6}++[{25}])^0000000000010000:
+92,{1}={11}:({15}:{2},{16}:*{6}--[{26}])^0000000000010000:
+93,{1}={11}:({15}:*{5}[{21}],{16}:{3})^0000001800000000:
+94,{1}={11}:({15}:*{5}[{21}],{16}:*{6}[{24}])^0000001800018000:
+95,{1}={11}:({15}:*{5}[{21}],{16}:*{6}++[{25}])^0000001800010000:
+96,{1}={11}:({15}:*{5}[{21}],{16}:*{6}--[{26}])^0000001800010000:
+97,{1}={11}:({15}:*{5}++[{22}],{16}:{3})^0000001000000000:
+98,{1}={11}:({15}:*{5}++[{22}],{16}:*{6}[{24}])^0000001000018000:
+99,{1}={11}:({15}:*{5}++[{22}],{16}:*{6}++[{25}])^0000001000010000:
+100,{1}={11}:({15}:*{5}++[{22}],{16}:*{6}--[{26}])^0000001000010000:
+101,{1}={11}:({15}:*{5}--[{23}],{16}:{3})^0000001000000000:
+102,{1}={11}:({15}:*{5}--[{23}],{16}:*{6}[{24}])^0000001000018000:
+103,{1}={11}:({15}:*{5}--[{23}],{16}:*{6}++[{25}])^0000001000010000:
+104,{1}={11}:({15}:*{5}--[{23}],{16}:*{6}--[{26}])^0000001000010000:
+105,*{4}[{18}]={11}:({15}:{2},{16}:{3})^0180000000000000:
+106,*{4}[{18}]={11}:({15}:{2},{16}:*{6}[{24}])^0180000000018000:
+107,*{4}[{18}]={11}:({15}:{2},{16}:*{6}++[{25}])^0180000000010000:
+108,*{4}[{18}]={11}:({15}:{2},{16}:*{6}--[{26}])^0180000000010000:
+109,*{4}[{18}]={11}:({15}:*{5}[{21}],{16}:{3})^0180001800000000:
+110,*{4}[{18}]={11}:({15}:*{5}[{21}],{16}:*{6}[{24}])^0180001800018000:
+111,*{4}[{18}]={11}:({15}:*{5}[{21}],{16}:*{6}++[{25}])^0180001800010000:
+112,*{4}[{18}]={11}:({15}:*{5}[{21}],{16}:*{6}--[{26}])^0180001800010000:
+113,*{4}[{18}]={11}:({15}:*{5}++[{22}],{16}:{3})^0180001000000000:
+114,*{4}[{18}]={11}:({15}:*{5}++[{22}],{16}:*{6}[{24}])^0180001000018000:
+115,*{4}[{18}]={11}:({15}:*{5}++[{22}],{16}:*{6}++[{25}])^0180001000010000:
+116,*{4}[{18}]={11}:({15}:*{5}++[{22}],{16}:*{6}--[{26}])^0180001000010000:
+117,*{4}[{18}]={11}:({15}:*{5}--[{23}],{16}:{3})^0180001000000000:
+118,*{4}[{18}]={11}:({15}:*{5}--[{23}],{16}:*{6}[{24}])^0180001000018000:
+119,*{4}[{18}]={11}:({15}:*{5}--[{23}],{16}:*{6}++[{25}])^0180001000010000:
+120,*{4}[{18}]={11}:({15}:*{5}--[{23}],{16}:*{6}--[{26}])^0180001000010000:
+121,*{4}++[{19}]={11}:({15}:{2},{16}:{3})^0100000000000000:
+122,*{4}++[{19}]={11}:({15}:{2},{16}:*{6}[{24}])^0100000000018000:
+123,*{4}++[{19}]={11}:({15}:{2},{16}:*{6}++[{25}])^0100000000010000:
+124,*{4}++[{19}]={11}:({15}:{2},{16}:*{6}--[{26}])^0100000000010000:
+125,*{4}++[{19}]={11}:({15}:*{5}[{21}],{16}:{3})^0100001800000000:
+126,*{4}++[{19}]={11}:({15}:*{5}[{21}],{16}:*{6}[{24}])^0100001800018000:
+127,*{4}++[{19}]={11}:({15}:*{5}[{21}],{16}:*{6}++[{25}])^0100001800010000:
+128,*{4}++[{19}]={11}:({15}:*{5}[{21}],{16}:*{6}--[{26}])^0100001800010000:
+129,*{4}++[{19}]={11}:({15}:*{5}++[{22}],{16}:{3})^0100001000000000:
+130,*{4}++[{19}]={11}:({15}:*{5}++[{22}],{16}:*{6}[{24}])^0100001000018000:
+131,*{4}++[{19}]={11}:({15}:*{5}++[{22}],{16}:*{6}++[{25}])^0100001000010000:
+132,*{4}++[{19}]={11}:({15}:*{5}++[{22}],{16}:*{6}--[{26}])^0100001000010000:
+133,*{4}++[{19}]={11}:({15}:*{5}--[{23}],{16}:{3})^0100001000000000:
+134,*{4}++[{19}]={11}:({15}:*{5}--[{23}],{16}:*{6}[{24}])^0100001000018000:
+135,*{4}++[{19}]={11}:({15}:*{5}--[{23}],{16}:*{6}++[{25}])^0100001000010000:
+136,*{4}++[{19}]={11}:({15}:*{5}--[{23}],{16}:*{6}--[{26}])^0100001000010000:
+137,*{4}--[{20}]={11}:({15}:{2},{16}:{3})^0100000000000000:
+138,*{4}--[{20}]={11}:({15}:{2},{16}:*{6}[{24}])^0100000000018000:
+139,*{4}--[{20}]={11}:({15}:{2},{16}:*{6}++[{25}])^0100000000010000:
+140,*{4}--[{20}]={11}:({15}:{2},{16}:*{6}--[{26}])^0100000000010000:
+141,*{4}--[{20}]={11}:({15}:*{5}[{21}],{16}:{3})^0100001800000000:
+142,*{4}--[{20}]={11}:({15}:*{5}[{21}],{16}:*{6}[{24}])^0100001800018000:
+143,*{4}--[{20}]={11}:({15}:*{5}[{21}],{16}:*{6}++[{25}])^0100001800010000:
+144,*{4}--[{20}]={11}:({15}:*{5}[{21}],{16}:*{6}--[{26}])^0100001800010000:
+145,*{4}--[{20}]={11}:({15}:*{5}++[{22}],{16}:{3})^0100001000000000:
+146,*{4}--[{20}]={11}:({15}:*{5}++[{22}],{16}:*{6}[{24}])^0100001000018000:
+147,*{4}--[{20}]={11}:({15}:*{5}++[{22}],{16}:*{6}++[{25}])^0100001000010000:
+148,*{4}--[{20}]={11}:({15}:*{5}++[{22}],{16}:*{6}--[{26}])^0100001000010000:
+149,*{4}--[{20}]={11}:({15}:*{5}--[{23}],{16}:{3})^0100001000000000:
+150,*{4}--[{20}]={11}:({15}:*{5}--[{23}],{16}:*{6}[{24}])^0100001000018000:
+151,*{4}--[{20}]={11}:({15}:*{5}--[{23}],{16}:*{6}++[{25}])^0100001000010000:
+152,*{4}--[{20}]={11}:({15}:*{5}--[{23}],{16}:*{6}--[{26}])^0100001000010000:
+
+153,{1}={11}:({15}:{2},{14},{17})^1000000000000000:                     ;SHIFT                                        
+154,{1}={11}:({15}:*{5}[{21}],{14},{17})^1000001800000000:                                                            
+155,{1}={11}:({15}:*{5}++[{22}],{14},{17})^1000001000000000:                                                          
+156,{1}={11}:({15}:*{5}--[{23}],{14},{17})^1100001000000000:                                                          
+157,*{4}[{18}]={11}:({15}:{2},{14},{17})^1180000000000000:                                                            
+158,*{4}[{18}]={11}:({15}:*{5}[{21}],{14},{17})^1180001800000000:                                                     
+159,*{4}[{18}]={11}:({15}:*{5}++[{22}],{14},{17})^1180001000000000:                                                   
+160,*{4}[{18}]={11}:({15}:*{5}--[{23}],{14},{17})^1180001000000000:                                                   
+161,*{4}++[{19}]={11}:({15}:{2},{14},{17})^1100000000000000:                                                          
+162,*{4}++[{19}]={11}:({15}:*{5}[{21}],{14},{17})^1100001800000000:                                                   
+163,*{4}++[{19}]={11}:({15}:*{5}++[{22}],{14},{17})^1100001000000000:                                                 
+164,*{4}++[{19}]={11}:({15}:*{5}--[{23}],{14},{17})^1100001000000000:                                                 
+165,*{4}--[{20}]={11}:({15}:{2},{14},{17})^1100000000000000:                                                          
+166,*{4}--[{20}]={11}:({15}:*{5}[{21}],{14},{17})^1100001800000000:                                                   
+167,*{4}--[{20}]={11}:({15}:*{5}++[{22}],{14},{17})^1100001000000000:                                                 
+168,*{4}--[{20}]={11}:({15}:*{5}--[{23}],{14},{17})^1100001000000000:                                                 
+
+169,{1}={15}:{29}^0000000800000000:                 ;MOV 32      ;direct 32-bit mov address  
+170,*{4}[{18}]={15}:{29}^0180000800000000:          ;MOV 32      ;IMOD for srcA set to indicate 32-bit direct address
+171,*{4}++[{19}]={15}:{29}^0100000800000000:        ;MOV 32
+172,*{4}--[{20}]={15}:{29}^0100000800000000:        ;MOV 32
+
+173,{1}={15}:@{9}^2000000800000000:                 ;MOV 32      ;@table-read 32-bit mov address
+174,*{4}[{18}]={15}:@{9}^2180000800000000:          ;MOV 32      ;IMOD for srcA set to indicate 32-bit direct @table-read address
+175,*{4}++[{19}]={15}:@{9}^2100000800000000:        ;MOV 32
+176,*{4}--[{20}]={15}:@{9}^2100000800000000:        ;MOV 32
+
+
+177,{15}:{2})(^0000000000000000:                    ;"FOR"
+178,{15}:*{5}[{21}])(^0000018000000000:
+179,{15}:*{5}++[{22}])(^0000010000000000:
+180,{15}:*{5}--[{23}])(^0000010000000000:
+181,{16}:#{8})(^1000000000000000:
+182,@{8})(^2000000000000000:
+
+183,{12})^0000000000000000:                           ;NEXT0/1 (DBNZ) alias
+
+184,{12}^0000000000000000:                            ;GOTO
+
+185,{16}:#{8}^1000000000000000:                       ;Repeat RPT (RPT is alias of MOV)
+186,[{5}]^0000000000000000:                           ;use contents of ARn as repeat value
+187,[{5}]++^0000000000000000:                         ;use contents of ARn as repeat value then post-increment ARn
+188,[{5}]--^0000000000000000:                         ;use contents of ARn as repeat value then post-decrement ARn
+
+189,{15}:{2}:[{13}]==1)GOTO:{12}^10FFA00000000000:                      ;BTBS             
+190,{15}:*{5}[{21}]:[{13}]==1)GOTO:{12}  ^10FFA01800000000:                                     
+191,{15}:*{5}++[{22}]:[{13}]==1)GOTO:{12}^10FFA01000000000:                                     
+192,{15}:*{5}--[{23}]:[{13}]==1)GOTO:{12}^10FFA01000000000:
+
+193,{15}:{2}:[{13}]==0)GOTO:{12}^10FF980000000000:                      ;BTBC              
+194,{15}:*{5}[{21}]:[{13}]==0)GOTO:{12}  ^10FF981800000000:                                         
+195,{15}:*{5}++[{22}]:[{13}]==0)GOTO:{12}^10FF981000000000:                                         
+196,{15}:*{5}--[{23}]:[{13}]==0)GOTO:{12}^10FF981000000000: 
+
+197,{27}^3000000000000000:                                              ;BRANCH  (unconditional long relative branch)
+
+
+
+;--------------------------------------------------------------------------------------------
+; Conventional "MOV" assembly language formatings used only with "MOV", "m" or "." mneumonics
+;--------------------------------------------------------------------------------------------
+
+198,{28}:{1},{16}:#{7}^1000000000000000:                               ;MOV#8                                                                   
+199,{28}:*{4}[{18}],{16}:#{7}^1180000000000000:                        ;MOV#8                                                                   
+200,{28}:*{4}++[{19}],{16}:#{7}^1100000000000000:                      ;MOV#8                                                                   
+201,{28}:*{4}--[{20}],{16}:#{7}^1100000000000000:                      ;MOV#8                                                                   
+202,{28}:{1},{16}:#{8}^1000000000000000:                               ;MOV#16                                                                  
+203,{28}:*{4}[{18}],{16}:#{8}^1180000000000000:                        ;MOV#16                                                                  
+204,{28}:*{4}++[{19}],{16}:#{8}^1100000000000000:                      ;MOV#16                                                                  
+205,{28}:*{4}--[{20}],{16}:#{8}^1100000000000000:                      ;MOV#16                                                                  
+206,{28}:{1},{15}:#{9}^3000000000000000:                               ;MOV#32                                                                  
+207,{28}:*{4}[{18}],{15}:#{9}^3180000000000000:                        ;MOV#32                                                                  
+208,{28}:*{4}++[{19}],{15}:#{9}^3100000000000000:                      ;MOV#32                                                                  
+209,{28}:*{4}--[{20}],{15}:#{9}^3100000000000000:                      ;MOV#32                                                                  
+210,{28}:{1},{15}:{29}^0000000800000000:                               ;direct 32-bit mov address IMOD for srcA set to indicate 32-bit direct @table-read address                                                                 
+211,{28}:*{4}[{18}],{15}:{29}^0180000800000000:                        ;direct 32-bit mov address                                                                  
+212,{28}:*{4}++[{19}],{15}:{29}^0100000800000000:                      ;direct 32-bit mov address                                                                  
+213,{28}:*{4}--[{20}],{15}:{29}^0100000800000000:                      ;direct 32-bit mov address                                                                  
+214,{28}:{1},{15}:{2}^0000000000000000:                                                                                            
+215,{28}:{1},{15}:*{5}[{21}]^0000001800000000:                                                                                     
+216,{28}:{1},{15}:*{5}++[{22}]^0000001000000000:                                                                                   
+217,{28}:{1},{15}:*{5}--[{23}]^0000001000000000:                                                                                   
+218,{28}:*{4}[{18}],{15}:{2}^0180000000000000:                                                                                     
+219,{28}:*{4}[{18}],{15}:*{5}[{21}]^0180001800000000:                                                                              
+220,{28}:*{4}[{18}],{15}:*{5}++[{22}]^0180001000000000:                                                                            
+221,{28}:*{4}[{18}],{15}:*{5}--[{23}]^0180001000000000:                                                                            
+222,{28}:*{4}++[{19}],{15}:{2}^0100000000000000:                                                                                   
+223,{28}:*{4}++[{19}],{15}:*{5}[{21}]^0100001800000000:                                                                            
+224,{28}:*{4}++[{19}],{15}:*{5}++[{22}]^0100001000000000:                                                                          
+225,{28}:*{4}++[{19}],{15}:*{5}--[{23}]^0100001000000000:                                                                          
+226,{28}:*{4}--[{20}],{15}:{2}^0100000000000000:                                                                                   
+227,{28}:*{4}--[{20}],{15}:*{5}[{21}]^0100001800000000:                                                                            
+228,{28}:*{4}--[{20}],{15}:*{5}++[{22}]^0100001000000000:                                                                          
+229,{28}:*{4}--[{20}],{15}:*{5}--[{23}]^0100001000000000:                                                                          
+230,{28}:{1},{15}:@{2}^2000000000000000:                                                                                           
+231,{28}:*{4}[{18}],{15}:@{2}^2180000000000000:                                                                                    
+232,{28}:*{4}++[{19}],{15}:@{2}^2100000000000000:                                                                                  
+233,{28}:*{4}--[{20}],{15}:@{2}^2100000000000000:                                                                                  
+234,{28}:{1},{15}:@{2}^2000000000000000:                                                                                           
+235,{28}:*{4}[{18}],{15}:@{2}^2180000000000000:                                                                                    
+236,{28}:*{4}++[{19}],{15}:@{2}^2100000000000000:                                                                                  
+237,{28}:*{4}--[{20}],{15}:@{2}^2100000000000000:                                                                                  
+238,{28}:{1},{15}:{2}^0000000000000000:                                                                                            
+239,{28}:{1},{15}:*{5}[{21}]^0000001800000000:                                                                                     
+240,{28}:{1},{15}:*{5}++[{22}]^0000001000000000:                                                                                   
+241,{28}:{1},{15}:*{5}--[{23}]^0000001000000000:                                                                                   
+242,{28}:*{4}[{18}],{15}:{2}^0180000000000000:                                                                                     
+243,{28}:*{4}[{18}],{15}:*{5}[{21}]^0180001800000000:                                                                              
+244,{28}:*{4}[{18}],{15}:*{5}++[{22}]^0180001000000000:                                                                            
+245,{28}:*{4}[{18}],{15}:*{5}--[{23}]^0180001000000000:                                                                            
+246,{28}:*{4}++[{19}],{15}:{2}^0100000000000000:                                                                                   
+247,{28}:*{4}++[{19}],{15}:*{5}[{21}]^0100001800000000:                                                                            
+248,{28}:*{4}++[{19}],{15}:*{5}++[{22}]^0100001000000000:                                                                          
+249,{28}:*{4}++[{19}],{15}:*{5}--[{23}]^0100001000000000:                                                                          
+250,{28}:*{4}--[{20}],{15}:{2}^0100000000000000:                                                                                   
+251,{28}:*{4}--[{20}],{15}:*{5}[{21}]^0100000800000000:                                                                            
+252,{28}:*{4}--[{20}],{15}:*{5}++[{22}]^0100000000000000:                                                                          
+253,{28}:*{4}--[{20}],{15}:*{5}--[{23}]^0100000000000000:                                                                          
+254,{28}:{1},{15}:@{2},{16}:{3}^2000000000000000:                                                                                  
+255,{28}:{1},{15}:@{2},{16}:*{6}[{24}]^2000000000018000:                                                                           
+256,{28}:{1},{15}:@{2},{16}:*{6}++[{25}]^2000000000010000:                                                                         
+257,{28}:{1},{15}:@{2},{16}:*{6}--[{26}]^2000000000010000:                                                                         
+258,{28}:*{4}[{18}],{15}:@{2},{16}:{3}^2180000000000000:                                                                           
+259,{28}:*{4}[{18}],{15}:@{2},{16}:*{6}[{24}]^2180000000018000:                                                                    
+260,{28}:*{4}[{18}],{15}:@{2},{16}:*{6}++[{25}]^2180000000010000:                                                                  
+261,{28}:*{4}[{18}],{15}:@{2},{16}:*{6}--[{26}]^2180000000010000:                                                                  
+262,{28}:*{4}++[{19}],{15}:@{2},{16}:{3}^2100000000000000:                                                                         
+263,{28}:*{4}++[{19}],{15}:@{2},{16}:*{6}[{24}]^2100000000018000:                                                                  
+264,{28}:*{4}++[{19}],{15}:@{2},{16}:*{6}++[{25}]^2100000000010000:                                                                
+265,{28}:*{4}++[{19}],{15}:@{2},{16}:*{6}--[{26}]^2100000000010000:                                                                
+266,{28}:*{4}--[{20}],{15}:@{2},{16}:{3}^2100000000000000:                                                                         
+267,{28}:*{4}--[{20}],{15}:@{2},{16}:*{6}[{24}]^2100000000018000:                                                                  
+268,{28}:*{4}--[{20}],{15}:@{2},{16}:*{6}++[{25}]^2100000000010000:                                                                
+269,{28}:*{4}--[{20}],{15}:@{2},{16}:*{6}--[{26}]^2100000000010000:                                                                
+270,{28}:{1},{15}:{2},{16}:#{8}^1000000000000000:                                                                                  
+271,{28}:{1},{15}:*{5}[{21}],{16}:#{8}^1000000800000000:                                                                           
+272,{28}:{1},{15}:*{5}++[{22}],{16}:#{8}^1000000000000000:                                                                         
+273,{28}:{1},{15}:*{5}--[{23}],{16}:#{8}^1000000000000000:                                                                         
+274,{28}:*{4}[{18}],{15}:{2},{16}:#{8}^1180000000000000:                                                                           
+275,{28}:*{4}[{18}],{15}:*{5}[{21}],{16}:#{8}^1180001800000000:                                                                    
+276,{28}:*{4}[{18}],{15}:*{5}++[{22}],{16}:#{8}^1180001000000000:                                                                  
+277,{28}:*{4}[{18}],{15}:*{5}--[{23}],{16}:#{8}^1180001000000000:                                                                  
+278,{28}:*{4}++[{19}],{15}:{2},{16}:#{8}^1100000000000000:                                                                         
+279,{28}:*{4}++[{19}],{15}:*{5}[{21}],{16}:#{8}^1100001800000000:                                                                  
+280,{28}:*{4}++[{19}],{15}:*{5}++[{22}],{16}:#{8}^1100001000000000:                                                                
+281,{28}:*{4}++[{19}],{15}:*{5}--[{23}],{16}:#{8}^1100001000000000:                                                                
+282,{28}:*{4}--[{20}],{15}:{2},{16}:#{8}^1100000000000000:                                                                         
+283,{28}:*{4}--[{20}],{15}:*{5}[{21}],{16}:#{8}^1100001800000000:                                                                  
+284,{28}:*{4}--[{20}],{15}:*{5}++[{22}],{16}:#{8}^1100001000000000:                                                                
+285,{28}:*{4}--[{20}],{15}:*{5}--[{23}],{16}:#{8}^1100001000000000:                                                                
+286,{28}:{1},{15}:{2},{16}:{3}^0000000000000000:                                                                                   
+287,{28}:{1},{15}:{2},{16}:*{6}[{24}]^0000000000018000:                                                                            
+288,{28}:{1},{15}:{2},{16}:*{6}++[{25}]^0000000000010000:                                                                          
+289,{28}:{1},{15}:{2},{16}:*{6}--[{26}]^0000000000010000:                                                                          
+290,{28}:{1},{15}:*{5}[{21}],{16}:{3}^0000001800000000:                                                                            
+291,{28}:{1},{15}:*{5}[{21}],{16}:*{6}[{24}]^0000001800008000:                                                                     
+292,{28}:{1},{15}:*{5}[{21}],{16}:*{6}++[{25}]^0000001800000000:                                                                   
+293,{28}:{1},{15}:*{5}[{21}],{16}:*{6}--[{26}]^0000001800000000:                                                                   
+294,{28}:{1},{15}:*{5}++[{22}],{16}:{3}^0000001000000000:                                                                          
+295,{28}:{1},{15}:*{5}++[{22}],{16}:*{6}[{24}]^0000001000018000:                                                                   
+296,{28}:{1},{15}:*{5}++[{22}],{16}:*{6}++[{25}]^0000001000010000:                                                                 
+297,{28}:{1},{15}:*{5}++[{22}],{16}:*{6}--[{26}]^0000001000010000:                                                                 
+298,{28}:{1},{15}:*{5}--[{23}],{16}:{3}^0000001000000000:                                                                          
+299,{28}:{1},{15}:*{5}--[{23}],{16}:*{6}[{24}]^0000001000018000:                                                                   
+300,{28}:{1},{15}:*{5}--[{23}],{16}:*{6}++[{25}]^0000001000010000:                                                                 
+301,{28}:{1},{15}:*{5}--[{23}],{16}:*{6}--[{26}]^0000001000010000:                                                                 
+302,{28}:*{4}[{18}],{15}:{2},{16}:{3}^0080000000000000:                                                                            
+303,{28}:*{4}[{18}],{15}:{2},{16}:*{6}[{24}]^0180000000018000:                                                                     
+304,{28}:*{4}[{18}],{15}:{2},{16}:*{6}++[{25}]^0180000000010000:                                                                   
+305,{28}:*{4}[{18}],{15}:{2},{16}:*{6}--[{26}]^0180000000010000:                                                                   
+306,{28}:*{4}[{18}],{15}:*{5}[{21}],{16}:{3}^0180001800000000:                                                                     
+307,{28}:*{4}[{18}],{15}:*{5}[{21}],{16}:*{6}[{24}]^0180001800018000:                                                              
+308,{28}:*{4}[{18}],{15}:*{5}[{21}],{16}:*{6}++[{25}]^0180001800010000:                                                            
+309,{28}:*{4}[{18}],{15}:*{5}[{21}],{16}:*{6}--[{26}]^0180001800010000:                                                            
+310,{28}:*{4}[{18}],{15}:*{5}++[{22}],{16}:{3}^0180001000000000:                                                                   
+311,{28}:*{4}[{18}],{15}:*{5}++[{22}],{16}:*{6}[{24}]^0180001000018000:                                                            
+312,{28}:*{4}[{18}],{15}:*{5}++[{22}],{16}:*{6}++[{25}]^0180001000010000:                                                          
+313,{28}:*{4}[{18}],{15}:*{5}++[{22}],{16}:*{6}--[{26}]^0180001000010000:                                                          
+314,{28}:*{4}[{18}],{15}:*{5}--[{23}],{16}:{3}^0180001000000000:                                                                   
+315,{28}:*{4}[{18}],{15}:*{5}--[{23}],{16}:*{6}[{24}]^0180001000018000:                                                            
+316,{28}:*{4}[{18}],{15}:*{5}--[{23}],{16}:*{6}++[{25}]^0180001000010000:                                                          
+317,{28}:*{4}[{18}],{15}:*{5}--[{23}],{16}:*{6}--[{26}]^0180001000010000:                                                          
+318,{28}:*{4}++[{19}],{15}:{2},{16}:{3}^0100000000000000:                                                                          
+319,{28}:*{4}++[{19}],{15}:{2},{16}:*{6}[{24}]^0100000000018000:                                                                   
+320,{28}:*{4}++[{19}],{15}:{2},{16}:*{6}++[{25}]^0100000000010000:                                                                 
+321,{28}:*{4}++[{19}],{15}:{2},{16}:*{6}--[{26}]^0100000000010000:                                                                 
+322,{28}:*{4}++[{19}],{15}:*{5}[{21}],{16}:{3}^0100001800000000:                                                                   
+323,{28}:*{4}++[{19}],{15}:*{5}[{21}],{16}:*{6}[{24}]^0100001800018000:                                                            
+324,{28}:*{4}++[{19}],{15}:*{5}[{21}],{16}:*{6}++[{25}]^0100001800010000:                                                          
+325,{28}:*{4}++[{19}],{15}:*{5}[{21}],{16}:*{6}--[{26}]^0100001800010000:                                                          
+326,{28}:*{4}++[{19}],{15}:*{5}++[{22}],{16}:{3}^0100001000000000:                                                                 
+327,{28}:*{4}++[{19}],{15}:*{5}++[{22}],{16}:*{6}[{24}]^0100001000018000:                                                          
+328,{28}:*{4}++[{19}],{15}:*{5}++[{22}],{16}:*{6}++[{25}]^0100001000010000:                                                        
+329,{28}:*{4}++[{19}],{15}:*{5}++[{22}],{16}:*{6}--[{26}]^0100001000010000:                                                        
+330,{28}:*{4}++[{19}],{15}:*{5}--[{23}],{16}:{3}^0100001000000000:                                                                 
+331,{28}:*{4}++[{19}],{15}:*{5}--[{23}],{16}:*{6}[{24}]^0100001000018000:                                                          
+332,{28}:*{4}++[{19}],{15}:*{5}--[{23}],{16}:*{6}++[{25}]^0100001000010000:                                                        
+333,{28}:*{4}++[{19}],{15}:*{5}--[{23}],{16}:*{6}--[{26}]^0100001000010000:                                                        
+334,{28}:*{4}--[{20}],{15}:{2},{16}:{3}^0100000000000000:                                                                          
+335,{28}:*{4}--[{20}],{15}:{2},{16}:*{6}[{24}]^0100000000018000:                                                                   
+336,{28}:*{4}--[{20}],{15}:{2},{16}:*{6}++[{25}]^0100000000010000:                                                                 
+337,{28}:*{4}--[{20}],{15}:{2},{16}:*{6}--[{26}]^0100000000010000:                                                                 
+338,{28}:*{4}--[{20}],{15}:*{5}[{21}],{16}:{3}^0100001800000000:                                                                   
+339,{28}:*{4}--[{20}],{15}:*{5}[{21}],{16}:*{6}[{24}]^0100001800018000:                                                            
+340,{28}:*{4}--[{20}],{15}:*{5}[{21}],{16}:*{6}++[{25}]^0100001800010000:                                                          
+341,{28}:*{4}--[{20}],{15}:*{5}[{21}],{16}:*{6}--[{26}]^0100001800010000:                                                          
+342,{28}:*{4}--[{20}],{15}:*{5}++[{22}],{16}:{3}^0100001000000000:                                                                 
+343,{28}:*{4}--[{20}],{15}:*{5}++[{22}],{16}:*{6}[{24}]^0100001000018000:                                                          
+344,{28}:*{4}--[{20}],{15}:*{5}++[{22}],{16}:*{6}++[{25}]^0100001000010000:                                                        
+345,{28}:*{4}--[{20}],{15}:*{5}++[{22}],{16}:*{6}--[{26}]^0100001000010000:                                                        
+346,{28}:*{4}--[{20}],{15}:*{5}--[{23}],{16}:{3}^0100001000000000:                                                                 
+347,{28}:*{4}--[{20}],{15}:*{5}--[{23}],{16}:*{6}[{24}]^0100001000018000:                                                          
+348,{28}:*{4}--[{20}],{15}:*{5}--[{23}],{16}:*{6}++[{25}]^0100001000010000:                                                        
+349,{28}:*{4}--[{20}],{15}:*{5}--[{23}],{16}:*{6}--[{26}]^0100001000010000:  
+      
+350,{28}:{1},{15}:{2},{13},{12}^1000000000000000:                     ;BTBS/C for use with conventional MOV, m or . assembly           
+351,{28}:{1},{15}:*{5}[{21}],{13},{12}^1000001800000000:                                                                  
+352,{28}:{1},{15}:*{5}++[{22}],{13},{12}^1000001000000000:                                    
+353,{28}:{1},{15}:*{5}--[{23}],{13},{12}^1000001000000000:
+
+354,{28}:{1},{15}:{2},{14},{17}^1000000000000000:                       ;SHIFT for use with conventional MOV, m or . assembly 
+355,{28}:{1},{15}:*{5}[{21}],{14},{17}^1000001800000000:
+356,{28}:{1},{15}:*{5}++[{22}],{14},{17}^1000001000000000:
+357,{28}:{1},{15}:*{5}--[{23}],{14},{17}^1000001000000000:
+358,{28}:*{4}[{18}],{15}:{2},{14},{17}^1180000000000000:
+359,{28}:*{4}[{18}],{15}:*{5}[{21}],{14},{17}^1180001800000000:
+360,{28}:*{4}[{18}],{15}:*{5}++[{22}],{14},{17}^1180001000000000:
+361,{28}:*{4}[{18}],{15}:*{5}--[{23}],{14},{17}^1180001000000000:
+362,{28}:*{4}++[{19}],{15}:{2},{14},{17}^1100000000000000:
+363,{28}:*{4}++[{19}],{15}:*{5}[{21}],{14},{17}^1100001800000000:
+364,{28}:*{4}++[{19}],{15}:*{5}++[{22}],{14},{17}^1100001000000000:
+365,{28}:*{4}++[{19}],{15}:*{5}--[{23}],{14},{17}^1100001000000000:
+366,{28}:*{4}--[{20}],{15}:{2},{14},{17}^1100000000000000:
+367,{28}:*{4}--[{20}],{15}:*{5}[{21}],{14},{17}^1100001800000000:
+368,{28}:*{4}--[{20}],{15}:*{5}++[{22}],{14},{17}^1100001000000000:
+369,{28}:*{4}--[{20}],{15}:*{5}--[{23}],{14},{17}^1100001000000000:
+
+
+370,{28}:{1},{15}:@{9}^2000000800000000:                              ;@table-read 32-bit mov address                                                                  
+371,{28}:*{4}[{18}],{15}:@{9}^2180000800000000:                       ;IMOD for srcA set to indicate 32-bit direct @table-read address                                                                   
+372,{28}:*{4}++[{19}],{15}:@{9}^2100000800000000:                                                                                        
+373,{28}:*{4}--[{20}],{15}:@{9}^2100000800000000:                                                                                        
+
+
+
+
+;----------------------------------------------------------------
+; SYMPL64 INTERMEDIATE LANGUAGE (IL) mnemonics definition section
+;----------------------------------------------------------------
+
+* ;Mnemonic Definition section, which includes just a few of the many possible aliases. 
+
+;-----------------------------------------------------------------------------------------------------------
+; MOV - the one and only true opcode--and it's implied, meaning that it has no encoding, since it is implied
+;-----------------------------------------------------------------------------------------------------------
+
+MOV|354-367^0000000000000000:            ;special MOV for shift operator                           
+m|354-367^0000000000000000:              ;special MOV for shift operator                           
+.|354-367^0000000000000000:              ;special MOV for shift operator                           
+
+MOV|350-353^0000000000000000:            ;special MOV for bit-test and branch if set/clear operator                           
+m|350-353^0000000000000000:              ;special MOV for bit-test and branch if set/clear operator                           
+.|350-353^0000000000000000:              ;special MOV for bit-test and branch if set/clear operator                           
+
+MOV|198-349^0000000000000000:                                                                                               
+m|198-349^0000000000000000:                  ;another mnemonic for MOV                                                      
+.|198-349^0000000000000000:                  ;yet another mnemonic for MOV   
+
+MOV|370-373^0000000000000000:                                                                                               
+m|370-373^0000000000000000:                  ;another mnemonic for MOV (single 32-bit address for srcA)                                                     
+.|370-373^0000000000000000:                  ;yet another mnemonic for MOV (single 32-bit address for srcA)                                                  
+
+
+                                               
+                                                                                                               
+;-----------------------------------------------------------------------------------------------
+;  Data types definitions for DESTINATION with rounding mode (default rounding mode is "nearest")
+;-----------------------------------------------------------------------------------------------
+
+UB|1-4|17-168^0000000000000000:              ; unsigned byte  (8 bits)
+UH|5-8|17-168^0200000000000000:              ; unsigned half-word (16 bits)
+UW|9-12|17-176|^0400000000000000:            ; unsigned word (32 bits)
+UD|13-16|17-168^0600000000000000:            ; unsigned double-word (64 bits)
+SB|1-4|17-168^0800000000000000:              ; signed byte  (8 bits)
+SH|5-8|17-168^0A00000000000000:              ; signed half-word (16 bits)
+SW|9-12|17-176^0C00000000000000:             ; signed word (32 bits)
+SD|13-16|17-168^0E00000000000000:            ; signed double-word (64 bits)
+FH|5-8|17-168^0200000000000000:              ; half-precision float with round-to-nearest
+FS|9-12|17-168^0400000000000000:             ; single-precision float with round-to-nearest
+FD|17-168^0600000000000000:                  ; double-precision float with round-to-nearest
+FH.P|5-8|17-168^4200000000000000:            ; half-precision float with round-to-positive infinity 
+FS.P|9-12|17-168^4400000000000000:           ; single-precision float with round-to-positive infinity
+FD.P|17-168^4600000000000000:                ; double-precision float with round-to-positive infinity
+FH.N|5-8|17-168^8200000000000000:            ; half-precision float with round-to-negative infinity 
+FS.N|9-12|17-168^8400000000000000:           ; single-precision float with round-to-negative infinity
+FD.N|17-168^8600000000000000:                ; double-precision float with round-to-negative infinity
+FH.Z|5-8|17-168^C200000000000000:            ; half-precision float with round-to-zero
+FS.Z|9-12|17-168^C400000000000000:           ; single-precision float with round-to-zero
+FD.Z|17-168^C600000000000000:                ; double-precision float with round-to-zero
+
+;-----------------------------------------------------------------------------
+; Alias MOV instructions that affect the PC and LOOP counters
+;-----------------------------------------------------------------------------
+                                                 
+FOR (LPCNT0 = |177-182^02FF700000000000:
+FOR (LPCNT1 = |177-182^02FF780000000000:
+NEXT LPCNT0 GOTO: |183^14FFA04FF7040000:     ;test bit 16 of LPCNT0 for not zero. If 1, then load PC with short (12-bit) SrcB (relative) and decrement LPCNT0. Otherwise fall through 
+NEXT LPCNT1 GOTO: |183^14FFA04FF7840000:     ;test bit 16 of LPCNT1 for not zero. If 1, then load PC with short (12-bit) SrcB (relative) and decrement LPCNT1. Otherwise fall through
+GOTO |184^14FFA04FF887C000:                  ;btbs status bit 31 (branch relative always) alias
+BRA |184^14FFA04FF887C000:                   ;btbs status bit 31 (branch relative always) alias
+NOP^14FFA04FF8878000:                        ;btbs status bit 30 (branch relative never) alias
+BRAL |197^36FFF86000000000:                  ;relative unconditional long branch ALWAYS  alias
+IF (Z==1) GOTO:|184^14FFA04FF8800000:        ;test bit position (0) in status register for Z
+IF (Z==0) GOTO:|184^14FF984FF8800000:        ;test bit position (0) in status register for Z
+IF (A==B) GOTO:|184^14FFA04FF8800000:        ;test bit position (0) in status register for (A==B)
+IF (A!=B) GOTO:|184^14FF984FF8800000:        ;test bit position (0) in status register for (A!=B)
+IF (C==1) GOTO:|184^14FFA04FF8804000:        ;test bit position (1) in status register for C 
+IF (C==0) GOTO:|184^14FF984FF8804000:        ;test bit position (1) in status register for C 
+IF (N==1) GOTO:|184^14FFA04FF8808000:        ;test bit position (2) in status register for N
+IF (N==0) GOTO:|184^14FF984FF8808000:        ;test bit position (2) in status register for N
+IF (V==1) GOTO:|184^14FFA04FF880C000:        ;test bit position (3) in status register for V 
+IF (V==0) GOTO:|184^14FF984FF880C000:        ;test bit position (3) in status register for V 
+IF (A<B)  GOTO:|184^14FFA04FF8874000:        ;test bit position (28) in status register for ~Z & V
+IF (A>=B) GOTO:|184^14FF984FF8874000:        ;test bit position (28) in status register for ~Z & V
+IF (A<=B) GOTO:|184^14FFA04FF8878000:        ;test bit position (29) in status register for Z | V 
+IF (A>B)  GOTO:|184^14FF984FF8878000:        ;test bit position (29) in status register for Z | V 
+IF (|189-196^1400000000000000:               ;btbs or btbc
+REPEAT |185-188^02FF800000000000:            ;MOV srcA to location 0xFF80 (repeat counter)
+  
+*   ;equates section
+;-------------------------------------------------------------------------------------
+;   Defined/adopted operator names--used for annotation
+;   the destination address is the operator, not the mneumonic preceding the operand(s) 
+;-------------------------------------------------------------------------------------
+
+MOV:        EQU     0x0
+FADD:       EQU     0x0                                                                                               
+FSUB:       EQU     0x0                                                                                                
+FMUL:       EQU     0x0                                                                                                
+FDIV:       EQU     0x0                                                                                               
+FMA:        EQU     0x0
+SQRT:       EQU     0x0
+LOG:        EQU     0x0
+EXP:        EQU     0x0
+PWR:        EQU     0x0
+ITOF:       EQU     0x0
+FTOI:       EQU     0x0
+DOT:        EQU     0x0
+TEST:       EQU     0x0
+AND:        EQU     0x0
+OR:         EQU     0x0
+XOR:        EQU     0x0
+ENDI:       EQU     0x0
+BSET:       EQU     0x0
+SET:        EQU     0x0
+BCLR:       EQU     0x0
+CLR:        EQU     0x0
+BTBS:       EQU     0x0
+BTBC:       EQU     0x0
+DBNZ:       EQU     0x0
+BCND:       EQU     0x0
+SHIFT:      EQU     0x0
+SHFT:       EQU     0x0
+ADD:        EQU     0x0
+ADDC:       EQU     0x0
+SUB:        EQU     0x0
+SUBB:       EQU     0x0
+MUL:        EQU     0x0
+DIV:        EQU     0x0
+MIN:        EQU     0x0
+MAX:        EQU     0x0
+RCP:        EQU     0x0
+SIN:        EQU     0x0
+COS:        EQU     0x0
+TAN:        EQU     0x0
+COT:        EQU     0x0
+HTOS:       EQU     0x0
+HTOD:       EQU     0x0
+STOH:       EQU     0x0
+STOD:       EQU     0x0
+DTOH:       EQU     0x0
+DTOS:       EQU     0x0
+BUBL:       EQU     0x0     ;bubble sort operator--automatically sorts 16-entry list--best used with REPEAT alias when loading/unloading list
+TRAC:       EQU     0x0     ;16-level [entry:exit] PC discontinuity trace buffer used for debugging
+
+;-----------------------------------------------------------------------------
+;   Data type specifiers for SOURCE operands A and B
+;-----------------------------------------------------------------------------
+
+UB:         EQU     0x0        ;unsigned byte 
+UH:         EQU     0x1        ;unsigned half-word (16 bits)
+UW:         EQU     0x2        ;unsigned word (32 bits)
+UD:         EQU     0x3        ;unsigned double-word (64 bits)
+SB:         EQU     0x4        ;signed byte 
+SH:         EQU     0x5        ;signed half-word (16 bits)
+SW:         EQU     0x6        ;signed word (32 bits)
+SD:         EQU     0x7        ;signed double-word (64 bits)
+FH:         EQU     0x1        ;float half-precision
+FS:         EQU     0x2        ;float single-precision
+FD:         EQU     0x3        ;float double-precision
+
+;--------------------------------------------------------------------------           
+;         internal memory-mapped h/w registers
+;--------------------------------------------------------------------------
+
+PC_REL:         EQU     0xFFF8                          ;load PC with unconditional 32-bit relative branch value
+SP_TOS:         EQU     0xFFF0                          ;reading this location will return the contents at the top of stack without affecting SP
+SP:             EQU     0xFFE8                          ;stack pointer
+AR6:            EQU     0xFFE0                          ;Auxiliary Reg 6
+AR5:            EQU     0xFFD8                          ;Auxiliary Reg 5
+AR4:            EQU     0xFFD0                          ;Auxiliary Reg 4
+AR3:            EQU     0xFFC8                          ;Auxiliary Reg 3
+AR2:            EQU     0xFFC0                          ;Auxiliary Reg 2
+AR1:            EQU     0xFFB8                          ;Auxiliary Reg 1
+AR0:            EQU     0xFFB0                          ;Auxiliary Reg 0
+PC:             EQU     0xFFA8                          ;Program Counter
+PCS:            EQU     0xFFA0                          ;conditional load PC "set" with 14-bit relative branch value
+PCC:            EQU     0xFF98                          ;conditional load PC "clear" with 14-bit relative branch value
+PC_COPY:        EQU     0xFF90                          ;anytime a PC discontinuity happens, a copy of the original is automatically placed here
+STATUS:         EQU     0xFF88                          ;Status Register
+RPT:            EQU     0xFF80                          ;repeat counter location
+LPCNT1:         EQU     0xFF78                          ;H/W loop counter 1
+LPCNT0:         EQU     0xFF70                          ;H/W loop counter 0
+TIMER:          EQU     0xFF68                          ;timer
+                        
+CREG:           EQU     0xFF60                          ;CREG for FMA and DOT
+CAPTURE3:       EQU     0xFF58                          ;alternate delayed exception capture register 3
+CAPTURE2:       EQU     0xFF50                          ;alternate delayed exception capture register 2
+CAPTURE1:       EQU     0xFF48                          ;alternate delayed exception capture register 1
+CAPTURE0:       EQU     0xFF40                          ;alternate delayed exception capture register 0
+
+QOS:            EQU     0xFF20                          ;quality of service register
+
+NMI_VECT:       EQU     0xFEF8
+IRQ_VECT:       EQU     0xFEF0
+INV_VECT:       EQU     0xFEE8
+DIVx0_VECT:     EQU     0xFEE0
+OVFL_VECT:      EQU     0xFED8
+UNFL_VECT:      EQU     0xFED0
+INEXT_VECT:     EQU     0xFEC8
+
+
+;--------------------------------------------------------------------------
+;Aliases for PCS (btbs) PCC (btbc)
+;--------------------------------------------------------------------------
+
+BTBS:           EQU     PCS                             ;bit test and branch if bit is set
+BTBC:           EQU     PCC                             ;bit test and branch if bit is clear
+
+;--------------------------------------------------------------------------
+;STATUS Register flags and respective bit positions
+;--------------------------------------------------------------------------
+
+ Z:         EQU     0
+ C:         EQU     1
+ N:         EQU     2
+ V:         EQU     3
+ LOCKED:    EQU     4
+ DONE_bit:  EQU     5
+ INV:       EQU     6
+ DIVBY0:    EQU     7
+ OVFL:      EQU     8
+ UNFL:      EQU     9
+ NXACT:     EQU     10
+ ALTINV:    EQU     11
+ ALTDVBY0:  EQU     12
+ ALTOVFL:   EQU     13
+ ALTUNFL:   EQU     14
+ ALTNXACT:  EQU     15
+ DALTINV:   EQU     16
+ DALTDVBY0: EQU     17
+ DALTOVFL:  EQU     18
+ DALTUNFL:  EQU     19
+ DALTNXACT: EQU     20
+ IRQEN:     EQU     21
+ IRQ:       EQU     22
+ notZandV:  EQU     28
+ ZorV:      EQU     29
+ NEVER:     EQU     30
+ ALWAYS:    EQU     31
+
+;--------------------------------------------------------------------------
+;FP OPERATOR memory-mapped addresses and corresponding results storage bins
+;--------------------------------------------------------------------------
+FADD.15:     EQU     0xEEF8
+FADD.14:     EQU     0xEEF0
+FADD.13:     EQU     0xEEE8
+FADD.12:     EQU     0xEEE0
+FADD.11:     EQU     0xEED8
+FADD.10:     EQU     0xEED0
+FADD.9:      EQU     0xEEC8
+FADD.8:      EQU     0xEEC0
+FADD.7:      EQU     0xEEB8
+FADD.6:      EQU     0xEEB0
+FADD.5:      EQU     0xEEA8
+FADD.4:      EQU     0xEEA0
+FADD.3:      EQU     0xEE98
+FADD.2:      EQU     0xEE90
+FADD.1:      EQU     0xEE88
+FADD.0:      EQU     0xEE80
+
+FSUB.15:     EQU     0xEE78
+FSUB.14:     EQU     0xEE70
+FSUB.13:     EQU     0xEE68
+FSUB.12:     EQU     0xEE60
+FSUB.11:     EQU     0xEE58
+FSUB.10:     EQU     0xEE50
+FSUB.9:      EQU     0xEE48
+FSUB.8:      EQU     0xEE40
+FSUB.7:      EQU     0xEE38
+FSUB.6:      EQU     0xEE30
+FSUB.5:      EQU     0xEE28
+FSUB.4:      EQU     0xEE20
+FSUB.3:      EQU     0xEE18
+FSUB.2:      EQU     0xEE10
+FSUB.1:      EQU     0xEE08
+FSUB.0:      EQU     0xEE00
+                        
+FMUL.15:     EQU     0xEDF8
+FMUL.14:     EQU     0xEDF0
+FMUL.13:     EQU     0xEDE8
+FMUL.12:     EQU     0xEDE0
+FMUL.11:     EQU     0xEDD8
+FMUL.10:     EQU     0xEDD0
+FMUL.9:      EQU     0xEDC8
+FMUL.8:      EQU     0xEDC0
+FMUL.7:      EQU     0xEDB8
+FMUL.6:      EQU     0xEDB0
+FMUL.5:      EQU     0xEDA8
+FMUL.4:      EQU     0xEDA0
+FMUL.3:      EQU     0xED98
+FMUL.2:      EQU     0xED90
+FMUL.1:      EQU     0xED88
+FMUL.0:      EQU     0xED80
+
+ITOF.15:     EQU     0xED78
+ITOF.14:     EQU     0xED70
+ITOF.13:     EQU     0xED68
+ITOF.12:     EQU     0xED60
+ITOF.11:     EQU     0xED58
+ITOF.10:     EQU     0xED50
+ITOF.9:      EQU     0xED48
+ITOF.8:      EQU     0xED40
+ITOF.7:      EQU     0xED38
+ITOF.6:      EQU     0xED30
+ITOF.5:      EQU     0xED28
+ITOF.4:      EQU     0xED20
+ITOF.3:      EQU     0xED18
+ITOF.2:      EQU     0xED10
+ITOF.1:      EQU     0xED08
+ITOF.0:      EQU     0xED00
+
+FTOI.15:     EQU     0xECF8
+FTOI.14:     EQU     0xECF0
+FTOI.13:     EQU     0xECE8
+FTOI.12:     EQU     0xECE0
+FTOI.11:     EQU     0xECD8
+FTOI.10:     EQU     0xECD0
+FTOI.9:      EQU     0xECC8
+FTOI.8:      EQU     0xECC0
+FTOI.7:      EQU     0xECB8
+FTOI.6:      EQU     0xECB0
+FTOI.5:      EQU     0xECA8
+FTOI.4:      EQU     0xECA0
+FTOI.3:      EQU     0xEC98
+FTOI.2:      EQU     0xEC90
+FTOI.1:      EQU     0xEC88
+FTOI.0:      EQU     0xEC80
+
+FDIV.15:     EQU     0xEC78
+FDIV.14:     EQU     0xEC70
+FDIV.13:     EQU     0xEC68
+FDIV.12:     EQU     0xEC60
+FDIV.11:     EQU     0xEC58
+FDIV.10:     EQU     0xEC50
+FDIV.9:      EQU     0xEC48
+FDIV.8:      EQU     0xEC40
+FDIV.7:      EQU     0xEC38
+FDIV.6:      EQU     0xEC30
+FDIV.5:      EQU     0xEC28
+FDIV.4:      EQU     0xEC20
+FDIV.3:      EQU     0xEC18
+FDIV.2:      EQU     0xEC10
+FDIV.1:      EQU     0xEC08
+FDIV.0:      EQU     0xEC00
+
+SQRT.15:     EQU     0xEBF8
+SQRT.14:     EQU     0xEBF0
+SQRT.13:     EQU     0xEBE8
+SQRT.12:     EQU     0xEBE0
+SQRT.11:     EQU     0xEBD8
+SQRT.10:     EQU     0xEBD0
+SQRT.9:      EQU     0xEBC8
+SQRT.8:      EQU     0xEBC0
+SQRT.7:      EQU     0xEBB8
+SQRT.6:      EQU     0xEBB0
+SQRT.5:      EQU     0xEBA8
+SQRT.4:      EQU     0xEBA0
+SQRT.3:      EQU     0xEB98
+SQRT.2:      EQU     0xEB90
+SQRT.1:      EQU     0xEB88
+SQRT.0:      EQU     0xEB80
+
+FMA.15:      EQU     0xEB78
+FMA.14:      EQU     0xEB70
+FMA.13:      EQU     0xEB68
+FMA.12:      EQU     0xEB60
+FMA.11:      EQU     0xEB58
+FMA.10:      EQU     0xEB50
+FMA.9:       EQU     0xEB48
+FMA.8:       EQU     0xEB40
+FMA.7:       EQU     0xEB38
+FMA.6:       EQU     0xEB30
+FMA.5:       EQU     0xEB28
+FMA.4:       EQU     0xEB20
+FMA.3:       EQU     0xEB18
+FMA.2:       EQU     0xEB10
+FMA.1:       EQU     0xEB08
+FMA.0:       EQU     0xEB00
+
+LOG.15:      EQU     0xEAF8
+LOG.14:      EQU     0xEAF0
+LOG.13:      EQU     0xEAE8
+LOG.12:      EQU     0xEAE0
+LOG.11:      EQU     0xEAD8
+LOG.10:      EQU     0xEAD0
+LOG.9:       EQU     0xEAC8
+LOG.8:       EQU     0xEAC0
+LOG.7:       EQU     0xEAB8
+LOG.6:       EQU     0xEAB0
+LOG.5:       EQU     0xEAA8
+LOG.4:       EQU     0xEAA0
+LOG.3:       EQU     0xEA98
+LOG.2:       EQU     0xEA90
+LOG.1:       EQU     0xEA88
+LOG.0:       EQU     0xEA80
+
+EXP.15:      EQU     0xEA78
+EXP.14:      EQU     0xEA70
+EXP.13:      EQU     0xEA68
+EXP.12:      EQU     0xEA60
+EXP.11:      EQU     0xEA58
+EXP.10:      EQU     0xEA50
+EXP.9:       EQU     0xEA48
+EXP.8:       EQU     0xEA40
+EXP.7:       EQU     0xEA38
+EXP.6:       EQU     0xEA30
+EXP.5:       EQU     0xEA28
+EXP.4:       EQU     0xEA20
+EXP.3:       EQU     0xEA18
+EXP.2:       EQU     0xEA10
+EXP.1:       EQU     0xEA08
+EXP.0:       EQU     0xEA00
+
+PWR.15:      EQU     0xE9F8
+PWR.14:      EQU     0xE9F0
+PWR.13:      EQU     0xE9E8
+PWR.12:      EQU     0xE9E0
+PWR.11:      EQU     0xE9D8
+PWR.10:      EQU     0xE9D0
+PWR.9:       EQU     0xE9C8
+PWR.8:       EQU     0xE9C0
+PWR.7:       EQU     0xE9B8
+PWR.6:       EQU     0xE9B0
+PWR.5:       EQU     0xE9A8
+PWR.4:       EQU     0xE9A0
+PWR.3:       EQU     0xE998
+PWR.2:       EQU     0xE990
+PWR.1:       EQU     0xE988
+PWR.0:       EQU     0xE980
+
+DTOS.15:     EQU     0xE778         ;double-precision to single-precision
+DTOS.14:     EQU     0xE770
+DTOS.13:     EQU     0xE768
+DTOS.12:     EQU     0xE760
+DTOS.11:     EQU     0xE758
+DTOS.10:     EQU     0xE750
+DTOS.9:      EQU     0xE748
+DTOS.8:      EQU     0xE740
+DTOS.7:      EQU     0xE738
+DTOS.6:      EQU     0xE730
+DTOS.5:      EQU     0xE728
+DTOS.4:      EQU     0xE720
+DTOS.3:      EQU     0xE718
+DTOS.2:      EQU     0xE710
+DTOS.1:      EQU     0xE708
+DTOS.0:      EQU     0xE700
+
+STOD.15:     EQU     0xE6F8        ;single-precision to double-precision
+STOD.14:     EQU     0xE6F0
+STOD.13:     EQU     0xE6E8
+STOD.12:     EQU     0xE6E0
+STOD.11:     EQU     0xE6D8
+STOD.10:     EQU     0xE6D0
+STOD.9:      EQU     0xE6C8
+STOD.8:      EQU     0xE6C0
+STOD.7:      EQU     0xE6B8
+STOD.6:      EQU     0xE6B0
+STOD.5:      EQU     0xE6A8
+STOD.4:      EQU     0xE6A0
+STOD.3:      EQU     0xE698
+STOD.2:      EQU     0xE690
+STOD.1:      EQU     0xE688
+STOD.0:      EQU     0xE680
+
+STOH.15:     EQU     0xE678       ;single-precision to half-precision
+STOH.14:     EQU     0xE670
+STOH.13:     EQU     0xE668
+STOH.12:     EQU     0xE660
+STOH.11:     EQU     0xE658
+STOH.10:     EQU     0xE650
+STOH.9:      EQU     0xE648
+STOH.8:      EQU     0xE640
+STOH.7:      EQU     0xE638
+STOH.6:      EQU     0xE630
+STOH.5:      EQU     0xE628
+STOH.4:      EQU     0xE620
+STOH.3:      EQU     0xE618
+STOH.2:      EQU     0xE610
+STOH.1:      EQU     0xE608
+STOH.0:      EQU     0xE600
+
+HTOS.15:     EQU     0xE5F8      ;Half-precision to single-precision
+HTOS.14:     EQU     0xE5F0
+HTOS.13:     EQU     0xE5E8
+HTOS.12:     EQU     0xE5E0
+HTOS.11:     EQU     0xE5D8
+HTOS.10:     EQU     0xE5D0
+HTOS.9:      EQU     0xE5C8
+HTOS.8:      EQU     0xE5C0
+HTOS.7:      EQU     0xE5B8
+HTOS.6:      EQU     0xE5B0
+HTOS.5:      EQU     0xE5A8
+HTOS.4:      EQU     0xE5A0
+HTOS.3:      EQU     0xE598
+HTOS.2:      EQU     0xE590
+HTOS.1:      EQU     0xE588
+HTOS.0:      EQU     0xE580
+
+HTOD.15:     EQU     0xE578       ;half-precision to double-precision
+HTOD.14:     EQU     0xE570
+HTOD.13:     EQU     0xE568
+HTOD.12:     EQU     0xE560
+HTOD.11:     EQU     0xE558
+HTOD.10:     EQU     0xE550
+HTOD.9:      EQU     0xE548
+HTOD.8:      EQU     0xE540
+HTOD.7:      EQU     0xE538
+HTOD.6:      EQU     0xE530
+HTOD.5:      EQU     0xE528
+HTOD.4:      EQU     0xE520
+HTOD.3:      EQU     0xE518
+HTOD.2:      EQU     0xE510
+HTOD.1:      EQU     0xE508
+HTOD.0:      EQU     0xE500
+
+DTOH.15:     EQU     0xE4F8       ;double-precision to half-precision
+DTOH.14:     EQU     0xE4F0
+DTOH.13:     EQU     0xE4E8
+DTOH.12:     EQU     0xE4E0
+DTOH.11:     EQU     0xE4D8
+DTOH.10:     EQU     0xE4D0
+DTOH.9:      EQU     0xE4C8
+DTOH.8:      EQU     0xE4C0
+DTOH.7:      EQU     0xE4B8
+DTOH.6:      EQU     0xE4B0
+DTOH.5:      EQU     0xE4A8
+DTOH.4:      EQU     0xE4A0
+DTOH.3:      EQU     0xE498
+DTOH.2:      EQU     0xE490
+DTOH.1:      EQU     0xE488
+DTOH.0:      EQU     0xE480
+
+;----------------------------------------------------------------------------------------------
+;Integer math and logic OPERATOR memory-mapped addresses and corresponding results storage bins
+;----------------------------------------------------------------------------------------------
+
+AND.15:      EQU     0xDFF8
+AND.14:      EQU     0xDFF0
+AND.13:      EQU     0xDFE8
+AND.12:      EQU     0xDFE0
+AND.11:      EQU     0xDFD8
+AND.10:      EQU     0xDFD0
+AND.9:       EQU     0xDFC8
+AND.8:       EQU     0xDFC0
+AND.7:       EQU     0xDFB8
+AND.6:       EQU     0xDFB0
+AND.5:       EQU     0xDFA8
+AND.4:       EQU     0xDFA0
+AND.3:       EQU     0xDF98
+AND.2:       EQU     0xDF90
+AND.1:       EQU     0xDF88
+AND.0:       EQU     0xDF80
+
+OR.15:       EQU     0xDF78
+OR.14:       EQU     0xDF70
+OR.13:       EQU     0xDF68
+OR.12:       EQU     0xDF60
+OR.11:       EQU     0xDF58
+OR.10:       EQU     0xDF50
+OR.9:        EQU     0xDF48
+OR.8:        EQU     0xDF40
+OR.7:        EQU     0xDF38
+OR.6:        EQU     0xDF30
+OR.5:        EQU     0xDF28
+OR.4:        EQU     0xDF20
+OR.3:        EQU     0xDF18
+OR.2:        EQU     0xDF10
+OR.1:        EQU     0xDF08
+OR.0:        EQU     0xDF00
+
+XOR.15:      EQU     0xDEF8
+XOR.14:      EQU     0xDEF0
+XOR.13:      EQU     0xDEE8
+XOR.12:      EQU     0xDEE0
+XOR.11:      EQU     0xDED8
+XOR.10:      EQU     0xDED0
+XOR.9:       EQU     0xDEC8
+XOR.8:       EQU     0xDEC0
+XOR.7:       EQU     0xDEB8
+XOR.6:       EQU     0xDEB0
+XOR.5:       EQU     0xDEA8
+XOR.4:       EQU     0xDEA0
+XOR.3:       EQU     0xDE98
+XOR.2:       EQU     0xDE90
+XOR.1:       EQU     0xDE88
+XOR.0:       EQU     0xDE80
+
+ADD.15:      EQU     0xDE78
+ADD.14:      EQU     0xDE70
+ADD.13:      EQU     0xDE68
+ADD.12:      EQU     0xDE60
+ADD.11:      EQU     0xDE58
+ADD.10:      EQU     0xDE50
+ADD.9:       EQU     0xDE48
+ADD.8:       EQU     0xDE40
+ADD.7:       EQU     0xDE38
+ADD.6:       EQU     0xDE30
+ADD.5:       EQU     0xDE28
+ADD.4:       EQU     0xDE20
+ADD.3:       EQU     0xDE18
+ADD.2:       EQU     0xDE10
+ADD.1:       EQU     0xDE08
+ADD.0:       EQU     0xDE00
+
+ADDC.15:     EQU     0xDDF8
+ADDC.14:     EQU     0xDDF0
+ADDC.13:     EQU     0xDDE8
+ADDC.12:     EQU     0xDDE0
+ADDC.11:     EQU     0xDDD8
+ADDC.10:     EQU     0xDDD0
+ADDC.9:      EQU     0xDDC8
+ADDC.8:      EQU     0xDDC0
+ADDC.7:      EQU     0xDDB8
+ADDC.6:      EQU     0xDDB0
+ADDC.5:      EQU     0xDDA8
+ADDC.4:      EQU     0xDDA0
+ADDC.3:      EQU     0xDD98
+ADDC.2:      EQU     0xDD90
+ADDC.1:      EQU     0xDD88
+ADDC.0:      EQU     0xDD80
+
+SUB.15:      EQU     0xDD78
+SUB.14:      EQU     0xDD70
+SUB.13:      EQU     0xDD68
+SUB.12:      EQU     0xDD60
+SUB.11:      EQU     0xDD58
+SUB.10:      EQU     0xDD50
+SUB.9:       EQU     0xDD48
+SUB.8:       EQU     0xDD40
+SUB.7:       EQU     0xDD38
+SUB.6:       EQU     0xDD30
+SUB.5:       EQU     0xDD28
+SUB.4:       EQU     0xDD20
+SUB.3:       EQU     0xDD18
+SUB.2:       EQU     0xDD10
+SUB.1:       EQU     0xDD08
+SUB.0:       EQU     0xDD00
+
+SUBB.15:     EQU     0xDCF8
+SUBB.14:     EQU     0xDCF0
+SUBB.13:     EQU     0xDCE8
+SUBB.12:     EQU     0xDCE0
+SUBB.11:     EQU     0xDCD8
+SUBB.10:     EQU     0xDCD0
+SUBB.9:      EQU     0xDCC8
+SUBB.8:      EQU     0xDCC0
+SUBB.7:      EQU     0xDCB8
+SUBB.6:      EQU     0xDCB0
+SUBB.5:      EQU     0xDCA8
+SUBB.4:      EQU     0xDCA0
+SUBB.3:      EQU     0xDC98
+SUBB.2:      EQU     0xDC90
+SUBB.1:      EQU     0xDC88
+SUBB.0:      EQU     0xDC80
+
+MUL.15:      EQU     0xDC78
+MUL.14:      EQU     0xDC70
+MUL.13:      EQU     0xDC68
+MUL.12:      EQU     0xDC60
+MUL.11:      EQU     0xDC58
+MUL.10:      EQU     0xDC50
+MUL.9:       EQU     0xDC48
+MUL.8:       EQU     0xDC40
+MUL.7:       EQU     0xDC38
+MUL.6:       EQU     0xDC30
+MUL.5:       EQU     0xDC28
+MUL.4:       EQU     0xDC20
+MUL.3:       EQU     0xDC18
+MUL.2:       EQU     0xDC10
+MUL.1:       EQU     0xDC08
+MUL.0:       EQU     0xDC00
+
+DIV.15:      EQU     0xDBF8
+DIV.14:      EQU     0xDBF0
+DIV.13:      EQU     0xDBE8
+DIV.12:      EQU     0xDBE0
+DIV.11:      EQU     0xDBD8
+DIV.10:      EQU     0xDBD0
+DIV.9:       EQU     0xDBC8
+DIV.8:       EQU     0xDBC0
+DIV.7:       EQU     0xDBB8
+DIV.6:       EQU     0xDBB0
+DIV.5:       EQU     0xDBA8
+DIV.4:       EQU     0xDBA0
+DIV.3:       EQU     0xDB98
+DIV.2:       EQU     0xDB90
+DIV.1:       EQU     0xDB88
+DIV.0:       EQU     0xDB80
+
+SHFT.15:     EQU     0xDB78
+SHFT.14:     EQU     0xDB70
+SHFT.13:     EQU     0xDB68
+SHFT.12:     EQU     0xDB60
+SHFT.11:     EQU     0xDB58
+SHFT.10:     EQU     0xDB50
+SHFT.9:      EQU     0xDB48
+SHFT.8:      EQU     0xDB40
+SHFT.7:      EQU     0xDB38
+SHFT.6:      EQU     0xDB30
+SHFT.5:      EQU     0xDB28
+SHFT.4:      EQU     0xDB20
+SHFT.3:      EQU     0xDB18
+SHFT.2:      EQU     0xDB10
+SHFT.1:      EQU     0xDB08
+SHFT.0:      EQU     0xDB00
+
+MAX.15:      EQU     0xDAF8
+MAX.14:      EQU     0xDAF0
+MAX.13:      EQU     0xDAE8
+MAX.12:      EQU     0xDAE0
+MAX.11:      EQU     0xDAD8
+MAX.10:      EQU     0xDAD0
+MAX.9:       EQU     0xDAC8
+MAX.8:       EQU     0xDAC0
+MAX.7:       EQU     0xDAB8
+MAX.6:       EQU     0xDAB0
+MAX.5:       EQU     0xDAA8
+MAX.4:       EQU     0xDAA0
+MAX.3:       EQU     0xDA98
+MAX.2:       EQU     0xDA90
+MAX.1:       EQU     0xDA88
+MAX.0:       EQU     0xDA80
+
+MIN.15:      EQU     0xDA78
+MIN.14:      EQU     0xDA70
+MIN.13:      EQU     0xDA68
+MIN.12:      EQU     0xDA60
+MIN.11:      EQU     0xDA58
+MIN.10:      EQU     0xDA50
+MIN.9:       EQU     0xDA48
+MIN.8:       EQU     0xDA40
+MIN.7:       EQU     0xDA38
+MIN.6:       EQU     0xDA30
+MIN.5:       EQU     0xDA28
+MIN.4:       EQU     0xDA20
+MIN.3:       EQU     0xDA18
+MIN.2:       EQU     0xDA10
+MIN.1:       EQU     0xDA08
+MIN.0:       EQU     0xDA00
+
+SIN.15:      EQU     0xD9F8 
+SIN.14:      EQU     0xD9F0
+SIN.13:      EQU     0xD9E8
+SIN.12:      EQU     0xD9E0
+SIN.11:      EQU     0xD9D8
+SIN.10:      EQU     0xD9D0
+SIN.9:       EQU     0xD9C8
+SIN.8:       EQU     0xD9C0
+SIN.7:       EQU     0xD9B8
+SIN.6:       EQU     0xD9B0
+SIN.5:       EQU     0xD9A8
+SIN.4:       EQU     0xD9A0
+SIN.3:       EQU     0xD998
+SIN.2:       EQU     0xD990
+SIN.1:       EQU     0xD988
+SIN.0:       EQU     0xD980
+
+COS.15:      EQU     0xD978 
+COS.14:      EQU     0xD970
+COS.13:      EQU     0xD968
+COS.12:      EQU     0xD960
+COS.11:      EQU     0xD958
+COS.10:      EQU     0xD950
+COS.9:       EQU     0xD948
+COS.8:       EQU     0xD940
+COS.7:       EQU     0xD938
+COS.6:       EQU     0xD930
+COS.5:       EQU     0xD928
+COS.4:       EQU     0xD920
+COS.3:       EQU     0xD918
+COS.2:       EQU     0xD910
+COS.1:       EQU     0xD908
+COS.0:       EQU     0xD900
+
+TAN.15:      EQU     0xD8F8
+TAN.14:      EQU     0xD8F0
+TAN.13:      EQU     0xD8E8
+TAN.12:      EQU     0xD8E0
+TAN.11:      EQU     0xD8D8
+TAN.10:      EQU     0xD8D0
+TAN.9:       EQU     0xD8C8
+TAN.8:       EQU     0xD8C0
+TAN.7:       EQU     0xD8B8
+TAN.6:       EQU     0xD8B0
+TAN.5:       EQU     0xD8A8
+TAN.4:       EQU     0xD8A0
+TAN.3:       EQU     0xD898
+TAN.2:       EQU     0xD890
+TAN.1:       EQU     0xD888
+TAN.0:       EQU     0xD880
+
+COT.15:      EQU     0xD878
+COT.14:      EQU     0xD870
+COT.13:      EQU     0xD868
+COT.12:      EQU     0xD860
+COT.11:      EQU     0xD858
+COT.10:      EQU     0xD850
+COT.9:       EQU     0xD848
+COT.8:       EQU     0xD840
+COT.7:       EQU     0xD838
+COT.6:       EQU     0xD830
+COT.5:       EQU     0xD828
+COT.4:       EQU     0xD820
+COT.3:       EQU     0xD818
+COT.2:       EQU     0xD810
+COT.1:       EQU     0xD808
+COT.0:       EQU     0xD800
+
+ENDI.15:     EQU     0xD7F8
+ENDI.14:     EQU     0xD7F0
+ENDI.13:     EQU     0xD7E8
+ENDI.12:     EQU     0xD7E0
+ENDI.11:     EQU     0xD7D8
+ENDI.10:     EQU     0xD7D0
+ENDI.9:      EQU     0xD7C8
+ENDI.8:      EQU     0xD7C0
+ENDI.7:      EQU     0xD7B8
+ENDI.6:      EQU     0xD7B0
+ENDI.5:      EQU     0xD7A8
+ENDI.4:      EQU     0xD7A0
+ENDI.3:      EQU     0xD798
+ENDI.2:      EQU     0xD790
+ENDI.1:      EQU     0xD788
+ENDI.0:      EQU     0xD780
+
+BUBL.15:     EQU     0xD778          ;bubble sort this list
+BUBL.14:     EQU     0xD770
+BUBL.13:     EQU     0xD768
+BUBL.12:     EQU     0xD760
+BUBL.11:     EQU     0xD758
+BUBL.10:     EQU     0xD750
+BUBL.9:      EQU     0xD748
+BUBL.8:      EQU     0xD740
+BUBL.7:      EQU     0xD738
+BUBL.6:      EQU     0xD730
+BUBL.5:      EQU     0xD728
+BUBL.4:      EQU     0xD720
+BUBL.3:      EQU     0xD718
+BUBL.2:      EQU     0xD710
+BUBL.1:      EQU     0xD708
+BUBL.0:      EQU     0xD700
+
+BSET.15:     EQU     0xD6F8
+BSET.14:     EQU     0xD6F0
+BSET.13:     EQU     0xD6E8
+BSET.12:     EQU     0xD6E0
+BSET.11:     EQU     0xD6D8
+BSET.10:     EQU     0xD6D0
+BSET.9:      EQU     0xD6C8
+BSET.8:      EQU     0xD6C0
+BSET.7:      EQU     0xD6B8
+BSET.6:      EQU     0xD6B0
+BSET.5:      EQU     0xD6A8
+BSET.4:      EQU     0xD6A0
+BSET.3:      EQU     0xD698
+BSET.2:      EQU     0xD690
+BSET.1:      EQU     0xD688
+BSET.0:      EQU     0xD680
+
+SET.15:      EQU     0xD6F8
+SET.14:      EQU     0xD6F0
+SET.13:      EQU     0xD6E8
+SET.12:      EQU     0xD6E0
+SET.11:      EQU     0xD6D8
+SET.10:      EQU     0xD6D0
+SET.9:       EQU     0xD6C8
+SET.8:       EQU     0xD6C0
+SET.7:       EQU     0xD6B8
+SET.6:       EQU     0xD6B0
+SET.5:       EQU     0xD6A8
+SET.4:       EQU     0xD6A0
+SET.3:       EQU     0xD698
+SET.2:       EQU     0xD690
+SET.1:       EQU     0xD688
+SET.0:       EQU     0xD680
+
+BCLR.15:     EQU     0xD678
+BCLR.14:     EQU     0xD670
+BCLR.13:     EQU     0xD668
+BCLR.12:     EQU     0xD660
+BCLR.11:     EQU     0xD658
+BCLR.10:     EQU     0xD650
+BCLR.9:      EQU     0xD648
+BCLR.8:      EQU     0xD640
+BCLR.7:      EQU     0xD638
+BCLR.6:      EQU     0xD630
+BCLR.5:      EQU     0xD628
+BCLR.4:      EQU     0xD620
+BCLR.3:      EQU     0xD618
+BCLR.2:      EQU     0xD610
+BCLR.1:      EQU     0xD608
+BCLR.0:      EQU     0xD600
+
+CLEAR.15:    EQU     0xD678
+CLEAR.14:    EQU     0xD670
+CLEAR.13:    EQU     0xD668
+CLEAR.12:    EQU     0xD660
+CLEAR.11:    EQU     0xD658
+CLEAR.10:    EQU     0xD650
+CLEAR.9:     EQU     0xD648
+CLEAR.8:     EQU     0xD640
+CLEAR.7:     EQU     0xD638
+CLEAR.6:     EQU     0xD630
+CLEAR.5:     EQU     0xD628
+CLEAR.4:     EQU     0xD620
+CLEAR.3:     EQU     0xD618
+CLEAR.2:     EQU     0xD610
+CLEAR.1:     EQU     0xD608
+CLEAR.0:     EQU     0xD600
+
+
+
+
+
+
+

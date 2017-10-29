@@ -1,0 +1,600 @@
+ 00000000                                  CPU  "SYMPL64_IL.TBL"
+ 00000000                                  HOF  "MOT32"
+ 00000000                                  WDLN 8
+                                ; SYMPL GP-GPU Shader Demo 3D Transform Micro-Kernel
+                                ; version 1.05   October 19, 2017
+                                ; Author:  Jerry D. Harthcock
+                                ; Copyright (C) 2017.  All rights reserved.
+                                           
+                                ;private dword storage
+ 00000000         =             bitbucket:  EQU     0x0000                   ;this dword location is reserved.  Don't use it for anything because a lot of garbage can wind up here
+ 00000008         =             work_1:     EQU     0x0008                    
+ 00000010         =             work_2:     EQU     0x0010
+ 00000018         =             work_3:     EQU     0x0018
+ 00000020         =             capt0_save: EQU     0x0020                  ;alternate delayed exception capture register 0 save location
+ 00000028         =             capt1_save: EQU     0x0028                  ;alternate delayed exception capture register 1 save location
+ 00000030         =             capt2_save: EQU     0x0030                  ;alternate delayed exception capture register 2 save location
+ 00000038         =             capt3_save: EQU     0x0038                  ;alternate delayed exception capture register 3 save location
+                                
+                                ;for private storage of parameters for 3D transform                                                                                       
+ 00000040         =             vect_start: EQU     0x0040                  ;start location of this thread's first triangle vector                                
+ 00000048         =             triangles:  EQU     0x0048                  ;number of triangles in this thread's list to process                                 
+                                
+                                ;dword storage locations for parameters so it will be easy to change to/from double precision
+ 00000050         =             scaleX:     EQU     0x0050                  ;scale factor X axis
+ 00000058         =             scaleY:     EQU     0x0058                  ;scale factor Y axis
+ 00000060         =             scaleZ:     EQU     0x0060                  ;scale factor Z axis
+ 00000068         =             transX:     EQU     0x0068                  ;translate amount X axis
+ 00000070         =             transY:     EQU     0x0070                  ;translate amount Y axis
+ 00000078         =             transZ:     EQU     0x0078                  ;translate amount Z axis
+                                
+ 0000D980         =             sin_thetaX: EQU     sin.0                   ;sine of theta X for rotate X                                                         
+ 0000D900         =             cos_thetaX: EQU     cos.0                   ;cosine of theta X for rotate X                                                      
+ 0000D988         =             sin_thetaY: EQU     sin.1                   ;sine of theta Y for rotate Y                                                        
+ 0000D908         =             cos_thetaY: EQU     cos.1                   ;cosine of theta Y for rotate Y                                                      
+ 0000D990         =             sin_thetaZ: EQU     sin.2                   ;sine of theta X for rotate Z                                                        
+ 0000D910         =             cos_thetaZ: EQU     cos.2                   ;cosine of theta X for rotate Z                                                      
+                                
+                                
+ 000000FE                                   org     0x0FE              
+                                
+ 000000FE 0000010E              Constants:  DFL     start                   ;program memory locations 0x000 - 0x0FF reserved for look-up table
+                                        
+ 000000FE 00000097              prog_len:   DFL     progend - Constants
+                                              
+                                ;           type    dest = OP:(type:srcA, type:srcB) 
+                                
+ 00000100                                   org     0x00000100                               ;default interrupt vector locations
+ 00000100                       load_vects: 
+ 00000100 12FEF80000020172                  uh      NMI_VECT = uh:#NMI_                      ;load of interrupt vectors for faster interrupt response
+ 00000101 12FEF00000020189                  uh      IRQ_VECT = uh:#IRQ_                      ;these registers are presently not visible to app s/w
+ 00000102 12FEE80000020175                  uh      INV_VECT = uh:#INV_
+ 00000103 12FEE00000020179                  uh      DIVx0_VECT = uh:#DIVx0_
+ 00000104 12FED80000020180                  uh      OVFL_VECT = uh:#OVFL_
+ 00000105 12FED00000020183                  uh      UNFL_VECT = uh:#UNFL_
+ 00000106 12FEC80000020186                  uh      INEXT_VECT = uh:#INEXT_
+ 00000107                       done:                   
+ 00000107 14D6804FF8800005                  uw      set.0 = set:(uw:STATUS, ub:#DONE_bit)    ;signal external CPU/host (load-balancer/coarse-grain scheduler) process is done
+ 00000108 04FF884D68000000                  uw      STATUS = uw:set.0                        ;note that the DONE_BIT is already set upon initial entry but is cleared at "start"
+                                                                                             ;to signal host thread has started (ie, not done)                
+ 00000109                       any_triangles?:
+ 00000109 14DF084004840000                  uw      or.1 = or:(uw:triangles, uw:#0x0)        ;see if there are any triangles to transform
+ 0000010A 0400084DF0800000                  uw      work_1 = uw:or.1                         ;result has to be read out before the Z flag can be tested
+ 0000010B 14FFA04FF8803FFE                          IF (Z==1) GOTO: any_triangles?
+                                                    
+ 0000010C 34FF684000060000                  uw      TIMER = uw:#0x60000                      ;load time-out timer with sufficient time to process before timeout
+ 0000010D 04FFC84004000000                  uw      AR3 = uw:vect_start 
+ 0000010E                       start:  
+ 0000010E 14D6004FF8840005                  uw      bclr.0 = bclr:(uw:STATUS, uw:#DONE_bit)  ;clear the DONE bit to signal we are now busy
+ 0000010F 04FF884D60000000                  uw      STATUS = uw:bclr.0
+                                
+ 00000110 24D9804018C00000                  fs      sin_thetaX = sin:(uw:@rotx)       ;calculate sine of theta X and save
+ 00000111 24D9004018C00000                  fs      cos_thetaX = cos:(uw:@rotx)       ;calculate cosine of theta X and save                               
+ 00000112 24D9884018D00000                  fs      sin_thetaY = sin:(uw:@roty)       ;calculate sine of theta Y and save                                   
+ 00000113 24D9084018D00000                  fs      cos_thetaY = cos:(uw:@roty)       ;calculate cosine of theta Y and save                                   
+ 00000114 24D9904018E00000                  fs      sin_thetaZ = sin:(uw:@rotz)       ;calculate sine of theta Z and save                                   
+ 00000115 24D9104018E00000                  fs      cos_thetaZ = cos:(uw:@rotz)       ;calculate cosine of theta Z and save                                   
+                                                                                                                                                            
+ 00000116 2400504018F00000                  fs      scaleX = fs:@scal_x               ;save scale X factor
+ 00000117 2400584019000000                  fs      scaleY = fs:@scal_y               ;save scale Y factor
+ 00000118 2400604019100000                  fs      scaleZ = fs:@scal_z               ;save scale Z factor
+ 00000119 2400684019200000                  fs      transX = fs:@trans_x              ;save translate X axis amount
+ 0000011A 2400704019300000                  fs      transY = fs:@trans_y              ;save translate Y axis amount
+ 0000011B 2400784019400000                  fs      transZ = fs:@trans_z              ;save translate Z axis amount
+                                
+                                                  ; AR3 is now pointing to first X of first triangle
+ 0000011C 04FFC04FFC800000                  uw      AR2 = uw:AR3                       ;copy AR3 contents to AR2 so AR2 can be used as write pointer back to PDB for saving results
+                                            
+ 0000011D 02FF704004800000                          for (LPCNT0 = uw:triangles) (      ;load loop counter 0 with number of triangles 
+                                            
+                                                    ;the following routine performs scaling on all three axis first, 
+                                                    ;rotate on all three axis second, then translate on all three axis last 
+                                                              
+ 0000011E                       loop:   ;scale on X, Y, Z axis
+                                            ;vertex 1
+ 0000011E 04ED805002340050                  fs        FMUL.0 = fmul:(fs:*AR3++[4], fs:scaleX)
+ 0000011F 04ED885002340058                  fs        FMUL.1 = fmul:(fs:*AR3++[4], fs:scaleY)
+ 00000120 04ED905002340060                  fs        FMUL.2 = fmul:(fs:*AR3++[4], fs:scaleZ)
+                                            ;vertex 2
+ 00000121 04ED985002340050                  fs        FMUL.3 = fmul:(fs:*AR3++[4], fs:scaleX)
+ 00000122 04EDA05002340058                  fs        FMUL.4 = fmul:(fs:*AR3++[4], fs:scaleY)
+ 00000123 04EDA85002340060                  fs        FMUL.5 = fmul:(fs:*AR3++[4], fs:scaleZ)
+                                            ;vertex 3
+ 00000124 04EDB05002340050                  fs        FMUL.6 = fmul:(fs:*AR3++[4], fs:scaleX)
+ 00000125 04EDB85002340058                  fs        FMUL.7 = fmul:(fs:*AR3++[4], fs:scaleY)
+ 00000126 04EDC05002340060                  fs        FMUL.8 = fmul:(fs:*AR3++[4], fs:scaleZ)
+                                            
+                                ;                     X1 is now in FMUL_0         
+                                ;                     Y1 is now in FMUL_1         
+                                ;                     Z1 is now in FMUL_2         
+                                ;                     X2 is now in FMUL_3         
+                                ;                     Y2 is now in FMUL_4         
+                                ;                     Z2 is now in FMUL_5         
+                                ;                     X3 is now in FMUL_6         
+                                ;                     Y3 is now in FMUL_7         
+                                ;                     Z3 is now in FMUL_8         
+                                            
+                                  ;rotate around X axis
+                                       ;vertex 1
+                                            ; (cos(xrot) * Y1) - (sin(xrot) * Z1) 
+ 00000127 04EDC84ED884D900                  fs        FMUL.9 = fmul:(fs:FMUL.1, fs:cos_thetaX)      ; FMUL.9 = (cos(xrot) * Y1)
+ 00000128 04EDD04ED904D980                  fs        FMUL.10 = fmul:(fs:FMUL.2, fs:sin_thetaX)     ; FMUL.10 = (sin(xrot) * Z1)
+                                            ; (sin(xrot) * Y1) + (cos(xrot) * Z1) 
+ 00000129 04EDD84ED884D980                  fs        FMUL.11 = fmul:(fs:FMUL.1, fs:sin_thetaX)     ; FMUL.11 = (sin(xrot) * Y1)
+ 0000012A 04EDE04ED904D900                  fs        FMUL.12 = fmul:(fs:FMUL.2, fs:cos_thetaX)     ; FMUL.12 = (cos(xrot) * Z1)
+                                            
+ 0000012B 04EE004EDC84EDD0                  fs        FSUB.0 = fsub:(fs:FMUL.9, fs:FMUL.10)         ; FSUB.0 = (cos(xrot) * Y1) - (sin(xrot) * Z1)
+ 0000012C 04EE804EDD84EDE0                  fs        FADD.0 = fadd:(fs:FMUL.11, fs:FMUL.12)        ; FADD.0 = (sin(xrot) * Y1) + (cos(xrot) * Z1)
+                                
+                                       ;vertex 2
+                                            ; (cos(xrot) * Y2) - (sin(xrot) * Z2) 
+ 0000012D 04ED884EDA04D900                  fs        FMUL.1 = fmul:(fs:FMUL.4, fs:cos_thetaX)      ; FMUL.1 = (cos(xrot) * Y2)
+ 0000012E 04ED904EDA84D980                  fs        FMUL.2 = fmul:(fs:FMUL.5, fs:sin_thetaX)      ; FMUL.2 = (sin(xrot) * Z2)
+                                            ; (sin(xrot) * Y2) + (cos(xrot) * Z2) 
+ 0000012F 04EDE84EDA04D980                  fs        FMUL.13 = fmul:(fs:FMUL.4, fs:sin_thetaX)     ; FMUL.13 = (sin(xrot) * Y2)
+ 00000130 04EDF04EDA84D900                  fs        FMUL.14 = fmul:(fs:FMUL.5, fs:cos_thetaX)     ; FMUL.14 = (cos(xrot) * Z2)
+                                            
+ 00000131 04EE084ED884ED90                  fs        FSUB.1 = fsub:(fs:FMUL.1, fs:FMUL.2)          ; FSUB.1 = (cos(xrot) * Y2) - (sin(xrot) * Z2)
+ 00000132 04EE884EDE84EDF0                  fs        FADD.1 = fadd:(fs:FMUL.13, fs:FMUL.14)        ; FADD.1 = (sin(xrot) * Y2) + (cos(xrot) * Z2)
+                                
+                                       ;vertex 3
+                                            ; (cos(xrot) * Y3) - (sin(xrot) * Z3) 
+ 00000133 04EDC84EDB84D900                  fs        FMUL.9 = fmul:(fs:FMUL.7, fs:cos_thetaX)      ; FMUL.9 = (cos(xrot) * Y3)
+ 00000134 04EDD04EDC04D980                  fs        FMUL.10 = fmul:(fs:FMUL.8, fs:sin_thetaX)     ; FMUL.10 = (sin(xrot) * Z3)
+                                            ; (sin(xrot) * Y3) + (cos(xrot) * Z3) 
+ 00000135 04EDD84EDB84D980                  fs        FMUL.11 = fmul:(fs:FMUL.7, fs:sin_thetaX)     ; FMUL.11 = (sin(xrot) * Y3)
+ 00000136 04EDE04EDC04D900                  fs        FMUL.12 = fmul:(fs:FMUL.8, fs:cos_thetaX)     ; FMUL.12 = (cos(xrot) * Z3)
+                                            
+ 00000137 04EE104EDC84EDD0                  fs        FSUB.2 = fsub:(fs:FMUL.9, fs:FMUL.10)         ; FSUB.2 = (cos(xrot) * Y3) - (sin(xrot) * Z3)
+ 00000138 04EE904EDD84EDE0                  fs        FADD.2 = fadd:(fs:FMUL.11, fs:FMUL.12)        ; FADD.2 = (sin(xrot) * Y3) + (cos(xrot) * Z3)            
+                                            
+                                            ;         X1 is now in FMUL_0
+                                            ;         Y1 is now in FSUB_0
+                                            ;         Z1 is now in FADD_0 
+                                            ;         X2 is now in FMUL_3
+                                            ;         Y2 is now in FSUB_1
+                                            ;         Z2 is now in FADD_1
+                                            ;         X3 is now in FMUL_6
+                                            ;         Y3 is now in FSUB_2
+                                            ;         Z3 is now in FADD_2      
+                                
+                                  ;rotate around Y axis
+                                       ;vertex 1
+                                            ; (cos(yrot) * X1) + (sin(yrot) * Z1) 
+ 00000139 04ED884ED804D908                  fs        FMUL.1 = fmul:(fs:FMUL.0, fs:cos_thetaY)      ; FMUL.1 = (cos(yrot) * X1)
+ 0000013A 04ED904EE804D988                  fs        FMUL.2 = fmul:(fs:FADD.0, fs:sin_thetaY)      ; FMUL.2 = (sin(yrot) * Z1)
+                                            ; (cos(yrot) * Z1) - (sin(yrot) * X1)
+ 0000013B 04EDA04EE804D908                  fs        FMUL.4 = fmul:(fs:FADD.0, fs:cos_thetaY)      ; FMUL.4 = (cos(xrot) * Z1)
+ 0000013C 04EDA84ED804D988                  fs        FMUL.5 = fmul:(fs:FMUL.0, fs:sin_thetaY)      ; FMUL.5 = (sin(xrot) * X1)
+                                            
+ 0000013D 04EE984ED884ED90                  fs        FADD.3 = fadd:(fs:FMUL.1, fs:FMUL.2)          ; FADD.3 = (cos(yrot) * X1) + (sin(yrot) * Z1)
+ 0000013E 04EE184EDA04EDA8                  fs        FSUB.3 = fsub:(fs:FMUL.4, fs:FMUL.5)          ; FSUB.3 = (cos(yrot) * Z1) - (sin(yrot) * X1)
+                                       ;vertex 2
+                                            ; (cos(yrot) * X2) + (sin(yrot) * Z2) 
+ 0000013F 04EDB84ED984D908                  fs        FMUL.7 = fmul:(fs:FMUL.3, fs:cos_thetaY)      ; FMUL.7 = (cos(yrot) * X2)
+ 00000140 04EDC04EE884D988                  fs        FMUL.8 = fmul:(fs:FADD.1, fs:sin_thetaY)      ; FMUL.8 = (sin(yrot) * Z2)
+                                            ; (cos(yrot) * Z2) - (sin(yrot) * X2)
+ 00000141 04EDC84EE884D908                  fs        FMUL.9 = fmul:(fs:FADD.1, fs:cos_thetaY)      ; FMUL.9 = (cos(xrot) * Z2)
+ 00000142 04EDD04ED984D988                  fs        FMUL.10 = fmul:(fs:FMUL.3, fs:sin_thetaY)     ; FMUL.10 = (sin(xrot) * X2)
+                                            
+ 00000143 04EEA04EDB84EDC0                  fs        FADD.4 = fadd:(fs:FMUL.7, fs:FMUL.8)          ; FADD.4 = (cos(yrot) * X2) + (sin(yrot) * Z2)
+ 00000144 04EE204EDC84EDD0                  fs        FSUB.4 = fmul:(fs:FMUL.9, fs:FMUL.10)         ; FSUB.4 = (cos(yrot) * Z2) - (sin(yrot) * X2)
+                                            
+                                       ;vertex 3
+                                            ; (cos(yrot) * X3) + (sin(yrot) * Z3) 
+ 00000145 04EDD84EDB04D908                  fs        FMUL.11 = fmul:(fs:FMUL.6, fs:cos_thetaY)     ; FMUL.11 = (cos(yrot) * X3)
+ 00000146 04EDE04EE904D988                  fs        FMUL.12 = fmul:(fs:FADD.2, fs:sin_thetaY)     ; FMUL.12 = (sin(yrot) * Z3)
+                                            
+                                            ; (cos(yrot) * Z3) - (sin(yrot) * X3)
+ 00000147 04EDE84EE904D908                  fs        FMUL.13 = fmul:(fs:FADD.2, fs:cos_thetaY)     ; FMUL.13 = (cos(xrot) * Z3)
+ 00000148 04EDF04EDB04D988                  fs        FMUL.14 = fmul:(fs:FMUL.6, fs:sin_thetaY)     ; FMUL.14 = (sin(xrot) * X3)
+                                            
+ 00000149 04EEA84EDD84EDE0                  fs        FADD.5 = fadd:(fs:FMUL.11, fs:FMUL.12)        ; FADD.5 = (cos(yrot) * X3) + (sin(yrot) * Z3)
+ 0000014A 04EE284EDE84EDF0                  fs        FSUB.5 = fsub:(fs:FMUL.13, fs:FMUL.14)        ; FSUB.5 = (cos(yrot) * Z3) - (sin(yrot) * X3)  
+                                            
+                                            ;         X1 is now in FADD_3
+                                            ;         Y1 is now in FSUB_0
+                                            ;         Z1 is now in FSUB_3
+                                            ;         X2 is now in FADD_4
+                                            ;         Y2 is now in FSUB_1
+                                            ;         Z2 is now in FSUB_4
+                                            ;         X3 is now in FADD_5
+                                            ;         Y3 is now in FSUB_2 
+                                            ;         Z3 is now in FSUB_5                      
+                                
+                                  ;rotate around Z axis
+                                       ;vertex 1
+                                            ; (cos(zrot) * X1) - (sin(zrot) * Y1) 
+ 0000014B 04ED804EE984D910                  fs        FMUL.0 = fmul:(fs:FADD.3, fs:cos_thetaZ)      ; FMUL.0 = (cos(zrot) * X1)
+ 0000014C 04ED884EE004D990                  fs        FMUL.1 = fmul:(fs:FSUB.0, fs:sin_thetaZ)      ; FMUL.1 = (sin(xrot) * Y1)
+                                            ; (sin(zrot) * X1) + (cos(zrot) * Y1) 
+ 0000014D 04ED904EE984D990                  fs        FMUL.2 = fmul:(fs:FADD.3, fs:sin_thetaZ)      ; FMUL.2 = (sin(xrot) * X1)
+ 0000014E 04ED984EE004D910                  fs        FMUL.3 = fmul:(fs:FSUB.0, fs:cos_thetaZ)      ; FMUL.3 = (cos(xrot) * Y1)
+                                            
+ 0000014F 04EE304ED804ED88                  fs        FSUB.6 = fsub:(fs:FMUL.0, fs:FMUL.1)          ; FSUB.6 = (cos(zrot) * X1) - (sin(zrot) * Y1)
+ 00000150 04EEB04ED904ED98                  fs        FADD.6 = fadd:(fs:FMUL.2, fs:FMUL.3)          ; FADD.6 = (sin(zrot) * X1) + (cos(zrot) * Y1)
+                                
+                                       ;vertex 2
+                                            ; (cos(zrot) * X2) - (sin(zrot) * Y2) 
+ 00000151 04EDA04EEA04D910                  fs        FMUL.4 = fmul:(fs:FADD.4, fs:cos_thetaZ)      ; FMUL.4 = (cos(zrot) * X1)
+ 00000152 04EDA84EE084D990                  fs        FMUL.5 = fmul:(fs:FSUB.1, fs:sin_thetaZ)      ; FMUL.5 = (sin(xrot) * Y1)
+                                            ; (sin(zrot) * X2) + (cos(zrot) * Y2) 
+ 00000153 04EDB04EEA04D990                  fs        FMUL.6 = fmul:(fs:FADD.4, fs:sin_thetaZ)      ; FMUL.6 = (sin(xrot) * X2)
+ 00000154 04EDB84EE084D910                  fs        FMUL.7 = fmul:(fs:FSUB.1, fs:cos_thetaZ)      ; FMUL.7 = (cos(xrot) * Y2)
+                                            
+ 00000155 04EE384EDA04EDA8                  fs        FSUB.7 = fsub:(fs:FMUL.4, fs:FMUL.5)          ; FSUB.7 = (cos(zrot) * X2) - (sin(zrot) * Y2)
+ 00000156 04EEB84EDB04EDB8                  fs        FADD.7 = fadd:(fs:FMUL.6, fs:FMUL.7)          ; FADD.7 = (sin(zrot) * X2) + (cos(zrot) * Y2)
+                                
+                                       ;vertex 3
+                                            ; (cos(zrot) * X3) - (sin(zrot) * Y3) 
+ 00000157 04EDC04EEA84D910                  fs        FMUL.8 = fmul:(fs:FADD.5, fs:cos_thetaZ)      ; FMUL.8 = (cos(zrot) * X3)
+ 00000158 04EDC84EE104D990                  fs        FMUL.9 = fmul:(fs:FSUB.2, fs:sin_thetaZ)      ; FMUL.9 = (sin(xrot) * Y3)
+                                            ; (sin(zrot) * X3) + (cos(zrot) * Y3)   
+ 00000159 04EDD04EEA84D990                  fs        FMUL.10 = fmul:(fs:FADD.5, fs:sin_thetaZ)     ; FMUL.10 = (sin(xrot) * X3)
+ 0000015A 04EDD84EE104D910                  fs        FMUL.11 = fmul:(fs:FSUB.2, fs:cos_thetaZ)     ; FMUL.11 = (cos(xrot) * Y3)
+                                            
+ 0000015B 04EE404EDC04EDC8                  fs        FSUB.8 = fsub:(fs:FMUL.8, fs:FMUL.9)          ; FSUB.8 = (cos(zrot) * X3) - (sin(zrot) * Y3)
+ 0000015C 04EEC04EDD04EDD8                  fs        FADD.8 = fadd:(fs:FMUL.10, fs:FMUL.11)        ; FADD.8 = (sin(zrot) * X3) + (cos(zrot) * Y3)            
+                                            
+                                            ;         X1 is now in FSUB.6
+                                            ;         Y1 is now in FADD.6
+                                            ;         Z1 is now in FSUB.3
+                                            ;         X2 is now in FSUB.7
+                                            ;         Y2 is now in FADD.7
+                                            ;         Z2 is now in FSUB.4
+                                            ;         X3 is now in FSUB.8
+                                            ;         Y3 is now in FADD.8
+                                            ;         Z3 is now in FSUB.5
+                                       
+                                    ;now translate on X, Y = Z axis
+                                        ;vertex 1
+ 0000015D 04EE804EE3040068                  fs        FADD.0 = fadd:(fs:FSUB.6, fs:transX)     
+ 0000015E 04EE884EEB040070                  fs        FADD.1 = fadd:(fs:FADD.6, fs:transY)     
+ 0000015F 04EE904EE1840078                  fs        FADD.2 = fadd:(fs:FSUB.3, fs:transZ)     
+                                        ;vertex 2
+ 00000160 04EEC84EE3840068                  fs        FADD.9 = fadd:(fs:FSUB.7, fs:transX)     
+ 00000161 04EED04EEB840070                  fs        FADD.10 = fadd:(fs:FADD.7, fs:transY)     
+ 00000162 04EED84EE2040078                  fs        FADD.11 = fadd:(fs:FSUB.4, fs:transZ)     
+                                        ;vertex 3
+ 00000163 04EEE04EE4040068                  fs        FADD.12 = fadd:(fs:FSUB.8, fs:transX)     
+ 00000164 04EEE84EEC040070                  fs        FADD.13 = fadd:(fs:FADD.8, fs:transY)     
+ 00000165 04EEF04EE2840078                  fs        FADD.14 = fadd:(fs:FSUB.5, fs:transZ)     
+                                
+ 00000166 0500224EE8000000                  fs        *AR2++[4] = fs:FADD.0        ;copy transformed X1 to PDB
+ 00000167 0500224EE8800000                  fs        *AR2++[4] = fs:FADD.1        ;copy transformed Y1 to PDB
+ 00000168 0500224EE9000000                  fs        *AR2++[4] = fs:FADD.2        ;copy transformed Z1 to PDB
+ 00000169 0500224EEC800000                  fs        *AR2++[4] = fs:FADD.9        ;copy transformed X2 to PDB
+ 0000016A 0500224EED000000                  fs        *AR2++[4] = fs:FADD.10       ;copy transformed Y2 to PDB
+ 0000016B 0500224EED800000                  fs        *AR2++[4] = fs:FADD.11       ;copy transformed Z2 to PDB
+ 0000016C 0500224EEE000000                  fs        *AR2++[4] = fs:FADD.12       ;copy transformed X3 to PDB
+ 0000016D 0500224EEE800000                  fs        *AR2++[4] = fs:FADD.13       ;copy transformed Y3 to PDB
+ 0000016E 0500224EEF000000                  fs        *AR2++[4] = fs:FADD.14       ;copy transformed Z3 to PDB
+                                
+ 0000016F 14FFA04FF7043FAF                          NEXT LPCNT0 GOTO: loop)        ;continue until done
+ 00000170 3400484000000000                  uw      triangles = uw:#0              ;clear triangles so it doesn't fall through again
+                                
+ 00000171 14FFA04FF887FF96                          GOTO done                      ;jump to done, semphr test and spin for next packet
+                                            
+                                ; interrupt service routines        
+ 00000172 057FC74FF9000000      NMI_:       uw      *SP--[8] = uw:PC_COPY          ;save return address from non-maskable interrupt (time-out timer in this instance)
+ 00000173 34FF68400000EA60                  uw      TIMER = uw:#60000              ;put a new value in the timer
+ 00000174 04FFA85004700000                  uw      PC = uw:*SP++[8]               ;return from interrupt
+                                        
+ 00000175 057FC74FF9000000      INV_:       uw      *SP--[8] = uw:PC_COPY          ;save return address from floating-point invalid operation exception, which is maskable
+ 00000176 34FF68400000EA60                  uw      TIMER = uw:#60000              ;put a new value in the timer
+ 00000177 0400184EB8800000                  fs      work_3 = fs:SQRT.1             ;retrieve the NaN with payload (this quiet NaN replaced the signaling NaN that caused the INV exc)
+ 00000178 04FFA85000F00000                  uw      PC = uw:*SP++[1]               ;return from interrupt
+                                            
+ 00000179 057FC74FF9000000      DIVx0_:     uw      *SP--[8] = uw:PC_COPY          ;save return address from floating-point divide by 0 exception, which is maskable
+ 0000017A 0400204FF4000000                  uw      capt0_save = uw:CAPTURE0       ;read out CAPTURE0 register and save it
+ 0000017B 0400284FF4800000                  uw      capt1_save = uw:CAPTURE1       ;read out CAPTURE1 register and save it
+ 0000017C 0400304FF5000000                  uw      capt2_save = uw:CAPTURE2       ;read out CAPTURE2 register and save it
+ 0000017D 0400384FF5800000                  uw      capt3_save = uw:CAPTURE3       ;read out CAPTURE3 register and save it
+ 0000017E 34FF68400000EA60                  uw      TIMER = uw:#60000              ;put a new value in the timer
+ 0000017F 04FFA85004700000                  uw      PC = uw:*SP++[8]               ;return from interrupt
+                                
+ 00000180 057FC74FF9000000      OVFL_:      uw      *SP--[8] = uw:PC_COPY          ;save return address from floating-point overflow exception, which is maskable
+ 00000181 34FF68400000EA60                  uw      TIMER = uw:#60000              ;put a new value in the timer
+ 00000182 04FFA85004700000                  uw      PC = uw:*SP++[8]               ;return from interrupt
+                                
+ 00000183 057FC74FF9000000      UNFL_:      uw      *SP--[8] = uw:PC_COPY          ;save return address from floating-point underflow exception, which is maskable
+ 00000184 34FF684000002710                  uw      TIMER = uw:#10000              ;put a new value in the timer
+ 00000185 04FFA85004700000                  uw      PC = uw:*SP++[8]               ;return from interrupt
+                                
+ 00000186 057FC74FF9000000      INEXT_:     uw      *SP--[8] = uw:PC_COPY          ;save return address from floating-point inexact exception, which is maskable
+ 00000187 34FF68400000EA60                  uw      TIMER = uw:#60000              ;put a new value in the timer
+ 00000188 04FFA85004700000                  uw      PC = uw:*SP++[8]               ;return from interrupt
+                                
+ 00000189 057FC74FF9000000      IRQ_:       uw      *SP--[8] = uw:PC_COPY          ;save return address (general-purpose, maskable interrupt)
+ 0000018A 34FF68400000EA60                  uw      TIMER = uw:#60000              ;put a new value in the timer
+ 0000018B 04FFA85004700000                  uw      PC = uw:*SP++[8]               ;return from interrupt 
+                                                       
+                                ;parameters for this particular 3D transform test run
+ 0000018C 000000000000001D      rotx:       dfl     0, 29                          ;rotate around x axis in integer degrees  
+ 0000018D 000000000000002C      roty:       dfl     0, 44                          ;rotate around y axis in integer degrees  
+ 0000018E 000000000000004B      rotz:       dfl     0, 75                          ;rotate around z axis in integer degrees  
+ 0000018F 0000000040000000      scal_x:     dff     0, 2.0                         ;scale X axis amount real
+ 00000190 0000000040000000      scal_y:     dff     0, 2.0                         ;scale y axis amount real
+ 00000191 0000000040100000      scal_z:     dff     0, 2.25                        ;scale Z axis amount real
+ 00000192 0000000040980000      trans_x:    dff     0, 4.75                        ;translate on X axis amount real
+ 00000193 000000004077AE14      trans_y:    dff     0, 3.87                        ;translate on Y axis amount real
+ 00000194 00000000400F2B02      trans_z:    dff     0, 2.237                       ;translate on Z axis amount real
+                                
+                                ;rotx:       dfl     0, 0                          ;rotate around x axis in integer degrees  
+                                ;roty:       dfl     0, 0                          ;rotate around y axis in integer degrees  
+                                ;rotz:       dfl     0, 0                          ;rotate around z axis in integer degrees  
+                                ;scal_x:     dff     0, 1                          ;scale X axis amount real
+                                ;scal_y:     dff     0, 1                          ;scale y axis amount real
+                                ;scal_z:     dff     0, 1                          ;scale Z axis amount real
+                                ;trans_x:    dff     0, 0                          ;translate on X axis amount real
+                                ;trans_y:    dff     0, 0                          ;translate on Y axis amount real
+                                ;trans_z:    dff     0, 0                          ;translate on Z axis amount real
+                                
+                                
+ 00000195                       progend:        
+ 00000000                                   end
+00000000  ADD                0000DE00  ADD.0              0000DE08  ADD.1              
+0000DE50  ADD.10             0000DE58  ADD.11             0000DE60  ADD.12             
+0000DE68  ADD.13             0000DE70  ADD.14             0000DE78  ADD.15             
+0000DE10  ADD.2              0000DE18  ADD.3              0000DE20  ADD.4              
+0000DE28  ADD.5              0000DE30  ADD.6              0000DE38  ADD.7              
+0000DE40  ADD.8              0000DE48  ADD.9              00000000  ADDC               
+0000DD80  ADDC.0             0000DD88  ADDC.1             0000DDD0  ADDC.10            
+0000DDD8  ADDC.11            0000DDE0  ADDC.12            0000DDE8  ADDC.13            
+0000DDF0  ADDC.14            0000DDF8  ADDC.15            0000DD90  ADDC.2             
+0000DD98  ADDC.3             0000DDA0  ADDC.4             0000DDA8  ADDC.5             
+0000DDB0  ADDC.6             0000DDB8  ADDC.7             0000DDC0  ADDC.8             
+0000DDC8  ADDC.9             0000000C  ALTDVBY0           0000000B  ALTINV             
+0000000F  ALTNXACT           0000000D  ALTOVFL            0000000E  ALTUNFL            
+0000001F  ALWAYS             00000000  AND                0000DF80  AND.0              
+0000DF88  AND.1              0000DFD0  AND.10             0000DFD8  AND.11             
+0000DFE0  AND.12             0000DFE8  AND.13             0000DFF0  AND.14             
+0000DFF8  AND.15             0000DF90  AND.2              0000DF98  AND.3              
+0000DFA0  AND.4              0000DFA8  AND.5              0000DFB0  AND.6              
+0000DFB8  AND.7              0000DFC0  AND.8              0000DFC8  AND.9              
+00000109  ANY_TRIANGLES?     0000FFB0  AR0                0000FFB8  AR1                
+0000FFC0  AR2                0000FFC8  AR3                0000FFD0  AR4                
+0000FFD8  AR5                0000FFE0  AR6                00000000  BCLR               
+0000D600  BCLR.0             0000D608  BCLR.1             0000D650  BCLR.10            
+0000D658  BCLR.11            0000D660  BCLR.12            0000D668  BCLR.13            
+0000D670  BCLR.14            0000D678  BCLR.15            0000D610  BCLR.2             
+0000D618  BCLR.3             0000D620  BCLR.4             0000D628  BCLR.5             
+0000D630  BCLR.6             0000D638  BCLR.7             0000D640  BCLR.8             
+0000D648  BCLR.9             00000000  BCND               00000000  BITBUCKET          
+00000000  BSET               0000D680  BSET.0             0000D688  BSET.1             
+0000D6D0  BSET.10            0000D6D8  BSET.11            0000D6E0  BSET.12            
+0000D6E8  BSET.13            0000D6F0  BSET.14            0000D6F8  BSET.15            
+0000D690  BSET.2             0000D698  BSET.3             0000D6A0  BSET.4             
+0000D6A8  BSET.5             0000D6B0  BSET.6             0000D6B8  BSET.7             
+0000D6C0  BSET.8             0000D6C8  BSET.9             0000FF98  BTBC               
+0000FFA0  BTBS               00000000  BUBL               0000D700  BUBL.0             
+0000D708  BUBL.1             0000D750  BUBL.10            0000D758  BUBL.11            
+0000D760  BUBL.12            0000D768  BUBL.13            0000D770  BUBL.14            
+0000D778  BUBL.15            0000D710  BUBL.2             0000D718  BUBL.3             
+0000D720  BUBL.4             0000D728  BUBL.5             0000D730  BUBL.6             
+0000D738  BUBL.7             0000D740  BUBL.8             0000D748  BUBL.9             
+00000001  C                  00000020  CAPT0_SAVE         00000028  CAPT1_SAVE         
+00000030  CAPT2_SAVE         00000038  CAPT3_SAVE         0000FF40  CAPTURE0           
+0000FF48  CAPTURE1           0000FF50  CAPTURE2           0000FF58  CAPTURE3           
+0000D600  CLEAR.0            0000D608  CLEAR.1            0000D650  CLEAR.10           
+0000D658  CLEAR.11           0000D660  CLEAR.12           0000D668  CLEAR.13           
+0000D670  CLEAR.14           0000D678  CLEAR.15           0000D610  CLEAR.2            
+0000D618  CLEAR.3            0000D620  CLEAR.4            0000D628  CLEAR.5            
+0000D630  CLEAR.6            0000D638  CLEAR.7            0000D640  CLEAR.8            
+0000D648  CLEAR.9            00000000  CLR                000000FE  CONSTANTS          
+00000000  COS                0000D900  COS.0              0000D908  COS.1              
+0000D950  COS.10             0000D958  COS.11             0000D960  COS.12             
+0000D968  COS.13             0000D970  COS.14             0000D978  COS.15             
+0000D910  COS.2              0000D918  COS.3              0000D920  COS.4              
+0000D928  COS.5              0000D930  COS.6              0000D938  COS.7              
+0000D940  COS.8              0000D948  COS.9              0000D900  COS_THETAX         
+0000D908  COS_THETAY         0000D910  COS_THETAZ         00000000  COT                
+0000D800  COT.0              0000D808  COT.1              0000D850  COT.10             
+0000D858  COT.11             0000D860  COT.12             0000D868  COT.13             
+0000D870  COT.14             0000D878  COT.15             0000D810  COT.2              
+0000D818  COT.3              0000D820  COT.4              0000D828  COT.5              
+0000D830  COT.6              0000D838  COT.7              0000D840  COT.8              
+0000D848  COT.9              0000FF60  CREG               00000011  DALTDVBY0          
+00000010  DALTINV            00000014  DALTNXACT          00000012  DALTOVFL           
+00000013  DALTUNFL           00000000  DBNZ               00000000  DIV                
+0000DB80  DIV.0              0000DB88  DIV.1              0000DBD0  DIV.10             
+0000DBD8  DIV.11             0000DBE0  DIV.12             0000DBE8  DIV.13             
+0000DBF0  DIV.14             0000DBF8  DIV.15             0000DB90  DIV.2              
+0000DB98  DIV.3              0000DBA0  DIV.4              0000DBA8  DIV.5              
+0000DBB0  DIV.6              0000DBB8  DIV.7              0000DBC0  DIV.8              
+0000DBC8  DIV.9              00000007  DIVBY0             00000179  DIVX0_             
+0000FEE0  DIVX0_VECT         00000107  DONE               00000005  DONE_BIT           
+00000000  DOT                00000000  DTOH               0000E480  DTOH.0             
+0000E488  DTOH.1             0000E4D0  DTOH.10            0000E4D8  DTOH.11            
+0000E4E0  DTOH.12            0000E4E8  DTOH.13            0000E4F0  DTOH.14            
+0000E4F8  DTOH.15            0000E490  DTOH.2             0000E498  DTOH.3             
+0000E4A0  DTOH.4             0000E4A8  DTOH.5             0000E4B0  DTOH.6             
+0000E4B8  DTOH.7             0000E4C0  DTOH.8             0000E4C8  DTOH.9             
+00000000  DTOS               0000E700  DTOS.0             0000E708  DTOS.1             
+0000E750  DTOS.10            0000E758  DTOS.11            0000E760  DTOS.12            
+0000E768  DTOS.13            0000E770  DTOS.14            0000E778  DTOS.15            
+0000E710  DTOS.2             0000E718  DTOS.3             0000E720  DTOS.4             
+0000E728  DTOS.5             0000E730  DTOS.6             0000E738  DTOS.7             
+0000E740  DTOS.8             0000E748  DTOS.9             00000000  ENDI               
+0000D780  ENDI.0             0000D788  ENDI.1             0000D7D0  ENDI.10            
+0000D7D8  ENDI.11            0000D7E0  ENDI.12            0000D7E8  ENDI.13            
+0000D7F0  ENDI.14            0000D7F8  ENDI.15            0000D790  ENDI.2             
+0000D798  ENDI.3             0000D7A0  ENDI.4             0000D7A8  ENDI.5             
+0000D7B0  ENDI.6             0000D7B8  ENDI.7             0000D7C0  ENDI.8             
+0000D7C8  ENDI.9             00000000  EXP                0000EA00  EXP.0              
+0000EA08  EXP.1              0000EA50  EXP.10             0000EA58  EXP.11             
+0000EA60  EXP.12             0000EA68  EXP.13             0000EA70  EXP.14             
+0000EA78  EXP.15             0000EA10  EXP.2              0000EA18  EXP.3              
+0000EA20  EXP.4              0000EA28  EXP.5              0000EA30  EXP.6              
+0000EA38  EXP.7              0000EA40  EXP.8              0000EA48  EXP.9              
+00000000  FADD               0000EE80  FADD.0             0000EE88  FADD.1             
+0000EED0  FADD.10            0000EED8  FADD.11            0000EEE0  FADD.12            
+0000EEE8  FADD.13            0000EEF0  FADD.14            0000EEF8  FADD.15            
+0000EE90  FADD.2             0000EE98  FADD.3             0000EEA0  FADD.4             
+0000EEA8  FADD.5             0000EEB0  FADD.6             0000EEB8  FADD.7             
+0000EEC0  FADD.8             0000EEC8  FADD.9             00000003  FD                 
+00000000  FDIV               0000EC00  FDIV.0             0000EC08  FDIV.1             
+0000EC50  FDIV.10            0000EC58  FDIV.11            0000EC60  FDIV.12            
+0000EC68  FDIV.13            0000EC70  FDIV.14            0000EC78  FDIV.15            
+0000EC10  FDIV.2             0000EC18  FDIV.3             0000EC20  FDIV.4             
+0000EC28  FDIV.5             0000EC30  FDIV.6             0000EC38  FDIV.7             
+0000EC40  FDIV.8             0000EC48  FDIV.9             00000001  FH                 
+00000000  FMA                0000EB00  FMA.0              0000EB08  FMA.1              
+0000EB50  FMA.10             0000EB58  FMA.11             0000EB60  FMA.12             
+0000EB68  FMA.13             0000EB70  FMA.14             0000EB78  FMA.15             
+0000EB10  FMA.2              0000EB18  FMA.3              0000EB20  FMA.4              
+0000EB28  FMA.5              0000EB30  FMA.6              0000EB38  FMA.7              
+0000EB40  FMA.8              0000EB48  FMA.9              00000000  FMUL               
+0000ED80  FMUL.0             0000ED88  FMUL.1             0000EDD0  FMUL.10            
+0000EDD8  FMUL.11            0000EDE0  FMUL.12            0000EDE8  FMUL.13            
+0000EDF0  FMUL.14            0000EDF8  FMUL.15            0000ED90  FMUL.2             
+0000ED98  FMUL.3             0000EDA0  FMUL.4             0000EDA8  FMUL.5             
+0000EDB0  FMUL.6             0000EDB8  FMUL.7             0000EDC0  FMUL.8             
+0000EDC8  FMUL.9             00000002  FS                 00000000  FSUB               
+0000EE00  FSUB.0             0000EE08  FSUB.1             0000EE50  FSUB.10            
+0000EE58  FSUB.11            0000EE60  FSUB.12            0000EE68  FSUB.13            
+0000EE70  FSUB.14            0000EE78  FSUB.15            0000EE10  FSUB.2             
+0000EE18  FSUB.3             0000EE20  FSUB.4             0000EE28  FSUB.5             
+0000EE30  FSUB.6             0000EE38  FSUB.7             0000EE40  FSUB.8             
+0000EE48  FSUB.9             00000000  FTOI               0000EC80  FTOI.0             
+0000EC88  FTOI.1             0000ECD0  FTOI.10            0000ECD8  FTOI.11            
+0000ECE0  FTOI.12            0000ECE8  FTOI.13            0000ECF0  FTOI.14            
+0000ECF8  FTOI.15            0000EC90  FTOI.2             0000EC98  FTOI.3             
+0000ECA0  FTOI.4             0000ECA8  FTOI.5             0000ECB0  FTOI.6             
+0000ECB8  FTOI.7             0000ECC0  FTOI.8             0000ECC8  FTOI.9             
+00000000  HTOD               0000E500  HTOD.0             0000E508  HTOD.1             
+0000E550  HTOD.10            0000E558  HTOD.11            0000E560  HTOD.12            
+0000E568  HTOD.13            0000E570  HTOD.14            0000E578  HTOD.15            
+0000E510  HTOD.2             0000E518  HTOD.3             0000E520  HTOD.4             
+0000E528  HTOD.5             0000E530  HTOD.6             0000E538  HTOD.7             
+0000E540  HTOD.8             0000E548  HTOD.9             00000000  HTOS               
+0000E580  HTOS.0             0000E588  HTOS.1             0000E5D0  HTOS.10            
+0000E5D8  HTOS.11            0000E5E0  HTOS.12            0000E5E8  HTOS.13            
+0000E5F0  HTOS.14            0000E5F8  HTOS.15            0000E590  HTOS.2             
+0000E598  HTOS.3             0000E5A0  HTOS.4             0000E5A8  HTOS.5             
+0000E5B0  HTOS.6             0000E5B8  HTOS.7             0000E5C0  HTOS.8             
+0000E5C8  HTOS.9             00000186  INEXT_             0000FEC8  INEXT_VECT         
+00000006  INV                00000175  INV_               0000FEE8  INV_VECT           
+00000016  IRQ                00000015  IRQEN              00000189  IRQ_               
+0000FEF0  IRQ_VECT           00000000  ITOF               0000ED00  ITOF.0             
+0000ED08  ITOF.1             0000ED50  ITOF.10            0000ED58  ITOF.11            
+0000ED60  ITOF.12            0000ED68  ITOF.13            0000ED70  ITOF.14            
+0000ED78  ITOF.15            0000ED10  ITOF.2             0000ED18  ITOF.3             
+0000ED20  ITOF.4             0000ED28  ITOF.5             0000ED30  ITOF.6             
+0000ED38  ITOF.7             0000ED40  ITOF.8             0000ED48  ITOF.9             
+00000100  LOAD_VECTS         00000004  LOCKED             00000000  LOG                
+0000EA80  LOG.0              0000EA88  LOG.1              0000EAD0  LOG.10             
+0000EAD8  LOG.11             0000EAE0  LOG.12             0000EAE8  LOG.13             
+0000EAF0  LOG.14             0000EAF8  LOG.15             0000EA90  LOG.2              
+0000EA98  LOG.3              0000EAA0  LOG.4              0000EAA8  LOG.5              
+0000EAB0  LOG.6              0000EAB8  LOG.7              0000EAC0  LOG.8              
+0000EAC8  LOG.9              0000011E  LOOP               0000FF70  LPCNT0             
+0000FF78  LPCNT1             00000000  MAX                0000DA80  MAX.0              
+0000DA88  MAX.1              0000DAD0  MAX.10             0000DAD8  MAX.11             
+0000DAE0  MAX.12             0000DAE8  MAX.13             0000DAF0  MAX.14             
+0000DAF8  MAX.15             0000DA90  MAX.2              0000DA98  MAX.3              
+0000DAA0  MAX.4              0000DAA8  MAX.5              0000DAB0  MAX.6              
+0000DAB8  MAX.7              0000DAC0  MAX.8              0000DAC8  MAX.9              
+00000000  MIN                0000DA00  MIN.0              0000DA08  MIN.1              
+0000DA50  MIN.10             0000DA58  MIN.11             0000DA60  MIN.12             
+0000DA68  MIN.13             0000DA70  MIN.14             0000DA78  MIN.15             
+0000DA10  MIN.2              0000DA18  MIN.3              0000DA20  MIN.4              
+0000DA28  MIN.5              0000DA30  MIN.6              0000DA38  MIN.7              
+0000DA40  MIN.8              0000DA48  MIN.9              00000000  MOV                
+00000000  MUL                0000DC00  MUL.0              0000DC08  MUL.1              
+0000DC50  MUL.10             0000DC58  MUL.11             0000DC60  MUL.12             
+0000DC68  MUL.13             0000DC70  MUL.14             0000DC78  MUL.15             
+0000DC10  MUL.2              0000DC18  MUL.3              0000DC20  MUL.4              
+0000DC28  MUL.5              0000DC30  MUL.6              0000DC38  MUL.7              
+0000DC40  MUL.8              0000DC48  MUL.9              00000002  N                  
+0000001E  NEVER              00000172  NMI_               0000FEF8  NMI_VECT           
+0000001C  NOTZANDV           0000000A  NXACT              00000000  OR                 
+0000DF00  OR.0               0000DF08  OR.1               0000DF50  OR.10              
+0000DF58  OR.11              0000DF60  OR.12              0000DF68  OR.13              
+0000DF70  OR.14              0000DF78  OR.15              0000DF10  OR.2               
+0000DF18  OR.3               0000DF20  OR.4               0000DF28  OR.5               
+0000DF30  OR.6               0000DF38  OR.7               0000DF40  OR.8               
+0000DF48  OR.9               00000008  OVFL               00000180  OVFL_              
+0000FED8  OVFL_VECT          0000FFA8  PC                 0000FF98  PCC                
+0000FFA0  PCS                0000FF90  PC_COPY            0000FFF8  PC_REL             
+00000195  PROGEND            000000FE  PROG_LEN           00000000  PWR                
+0000E980  PWR.0              0000E988  PWR.1              0000E9D0  PWR.10             
+0000E9D8  PWR.11             0000E9E0  PWR.12             0000E9E8  PWR.13             
+0000E9F0  PWR.14             0000E9F8  PWR.15             0000E990  PWR.2              
+0000E998  PWR.3              0000E9A0  PWR.4              0000E9A8  PWR.5              
+0000E9B0  PWR.6              0000E9B8  PWR.7              0000E9C0  PWR.8              
+0000E9C8  PWR.9              0000FF20  QOS                00000000  RCP                
+0000018C  ROTX               0000018D  ROTY               0000018E  ROTZ               
+0000FF80  RPT                00000004  SB                 00000050  SCALEX             
+00000058  SCALEY             00000060  SCALEZ             0000018F  SCAL_X             
+00000190  SCAL_Y             00000191  SCAL_Z             00000007  SD                 
+00000000  SET                0000D680  SET.0              0000D688  SET.1              
+0000D6D0  SET.10             0000D6D8  SET.11             0000D6E0  SET.12             
+0000D6E8  SET.13             0000D6F0  SET.14             0000D6F8  SET.15             
+0000D690  SET.2              0000D698  SET.3              0000D6A0  SET.4              
+0000D6A8  SET.5              0000D6B0  SET.6              0000D6B8  SET.7              
+0000D6C0  SET.8              0000D6C8  SET.9              00000005  SH                 
+00000000  SHFT               0000DB00  SHFT.0             0000DB08  SHFT.1             
+0000DB50  SHFT.10            0000DB58  SHFT.11            0000DB60  SHFT.12            
+0000DB68  SHFT.13            0000DB70  SHFT.14            0000DB78  SHFT.15            
+0000DB10  SHFT.2             0000DB18  SHFT.3             0000DB20  SHFT.4             
+0000DB28  SHFT.5             0000DB30  SHFT.6             0000DB38  SHFT.7             
+0000DB40  SHFT.8             0000DB48  SHFT.9             00000000  SHIFT              
+00000000  SIN                0000D980  SIN.0              0000D988  SIN.1              
+0000D9D0  SIN.10             0000D9D8  SIN.11             0000D9E0  SIN.12             
+0000D9E8  SIN.13             0000D9F0  SIN.14             0000D9F8  SIN.15             
+0000D990  SIN.2              0000D998  SIN.3              0000D9A0  SIN.4              
+0000D9A8  SIN.5              0000D9B0  SIN.6              0000D9B8  SIN.7              
+0000D9C0  SIN.8              0000D9C8  SIN.9              0000D980  SIN_THETAX         
+0000D988  SIN_THETAY         0000D990  SIN_THETAZ         0000FFE8  SP                 
+0000FFF0  SP_TOS             00000000  SQRT               0000EB80  SQRT.0             
+0000EB88  SQRT.1             0000EBD0  SQRT.10            0000EBD8  SQRT.11            
+0000EBE0  SQRT.12            0000EBE8  SQRT.13            0000EBF0  SQRT.14            
+0000EBF8  SQRT.15            0000EB90  SQRT.2             0000EB98  SQRT.3             
+0000EBA0  SQRT.4             0000EBA8  SQRT.5             0000EBB0  SQRT.6             
+0000EBB8  SQRT.7             0000EBC0  SQRT.8             0000EBC8  SQRT.9             
+0000010E  START              0000FF88  STATUS             00000000  STOD               
+0000E680  STOD.0             0000E688  STOD.1             0000E6D0  STOD.10            
+0000E6D8  STOD.11            0000E6E0  STOD.12            0000E6E8  STOD.13            
+0000E6F0  STOD.14            0000E6F8  STOD.15            0000E690  STOD.2             
+0000E698  STOD.3             0000E6A0  STOD.4             0000E6A8  STOD.5             
+0000E6B0  STOD.6             0000E6B8  STOD.7             0000E6C0  STOD.8             
+0000E6C8  STOD.9             00000000  STOH               0000E600  STOH.0             
+0000E608  STOH.1             0000E650  STOH.10            0000E658  STOH.11            
+0000E660  STOH.12            0000E668  STOH.13            0000E670  STOH.14            
+0000E678  STOH.15            0000E610  STOH.2             0000E618  STOH.3             
+0000E620  STOH.4             0000E628  STOH.5             0000E630  STOH.6             
+0000E638  STOH.7             0000E640  STOH.8             0000E648  STOH.9             
+00000000  SUB                0000DD00  SUB.0              0000DD08  SUB.1              
+0000DD50  SUB.10             0000DD58  SUB.11             0000DD60  SUB.12             
+0000DD68  SUB.13             0000DD70  SUB.14             0000DD78  SUB.15             
+0000DD10  SUB.2              0000DD18  SUB.3              0000DD20  SUB.4              
+0000DD28  SUB.5              0000DD30  SUB.6              0000DD38  SUB.7              
+0000DD40  SUB.8              0000DD48  SUB.9              00000000  SUBB               
+0000DC80  SUBB.0             0000DC88  SUBB.1             0000DCD0  SUBB.10            
+0000DCD8  SUBB.11            0000DCE0  SUBB.12            0000DCE8  SUBB.13            
+0000DCF0  SUBB.14            0000DCF8  SUBB.15            0000DC90  SUBB.2             
+0000DC98  SUBB.3             0000DCA0  SUBB.4             0000DCA8  SUBB.5             
+0000DCB0  SUBB.6             0000DCB8  SUBB.7             0000DCC0  SUBB.8             
+0000DCC8  SUBB.9             00000006  SW                 00000000  TAN                
+0000D880  TAN.0              0000D888  TAN.1              0000D8D0  TAN.10             
+0000D8D8  TAN.11             0000D8E0  TAN.12             0000D8E8  TAN.13             
+0000D8F0  TAN.14             0000D8F8  TAN.15             0000D890  TAN.2              
+0000D898  TAN.3              0000D8A0  TAN.4              0000D8A8  TAN.5              
+0000D8B0  TAN.6              0000D8B8  TAN.7              0000D8C0  TAN.8              
+0000D8C8  TAN.9              00000000  TEST               0000FF68  TIMER              
+00000000  TRAC               00000068  TRANSX             00000070  TRANSY             
+00000078  TRANSZ             00000192  TRANS_X            00000193  TRANS_Y            
+00000194  TRANS_Z            00000048  TRIANGLES          00000000  UB                 
+00000003  UD                 00000001  UH                 00000009  UNFL               
+00000183  UNFL_              0000FED0  UNFL_VECT          00000002  UW                 
+00000003  V                  00000040  VECT_START         00000008  WORK_1             
+00000010  WORK_2             00000018  WORK_3             00000000  XOR                
+0000DE80  XOR.0              0000DE88  XOR.1              0000DED0  XOR.10             
+0000DED8  XOR.11             0000DEE0  XOR.12             0000DEE8  XOR.13             
+0000DEF0  XOR.14             0000DEF8  XOR.15             0000DE90  XOR.2              
+0000DE98  XOR.3              0000DEA0  XOR.4              0000DEA8  XOR.5              
+0000DEB0  XOR.6              0000DEB8  XOR.7              0000DEC0  XOR.8              
+0000DEC8  XOR.9              00000000  Z                  0000001D  ZORV               
+
+
