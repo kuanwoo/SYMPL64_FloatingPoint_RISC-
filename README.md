@@ -36,7 +36,7 @@ http://www.cdadapter.com/download/cross32.pdf
 
 Continue reading below the block diagram to find out more about this design, the instruction set, how to set up the simulation, etc.  If you have any questions, you can direct them to me at: sympl.gpu@gmail.com
 
-[Click here to see the a larger view of the block diagram (116kB)](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/tree/master/Doc/images/Block_diagram_96dpi.png)
+[Click here to see a larger view of the block diagram (116kB)](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/tree/master/Doc/images/Block_diagram_96dpi.png)
 
 ![](https://github.com/jerry-D/SYMPL64_FloatingPoint_RISC-/blob/master/Doc/images/Block_diagram_small_96dpi.jpg)
 
