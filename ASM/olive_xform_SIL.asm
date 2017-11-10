@@ -283,7 +283,7 @@ NMI_:       uw      *SP--[8] = uw:PC_COPY          ;save return address from non
 INV_:       uw      *SP--[8] = uw:PC_COPY          ;save return address from floating-point invalid operation exception, which is maskable
             uw      TIMER = uw:#60000              ;put a new value in the timer
             fs      work_3 = fs:SQRT.1             ;retrieve the NaN with payload (this quiet NaN replaced the signaling NaN that caused the INV exc)
-            uw      PC = uw:*SP++[1]               ;return from interrupt
+            uw      PC = uw:*SP++[8]               ;return from interrupt
             
 DIVx0_:     uw      *SP--[8] = uw:PC_COPY          ;save return address from floating-point divide by 0 exception, which is maskable
             uw      capt0_save = uw:CAPTURE0       ;read out CAPTURE0 register and save it
